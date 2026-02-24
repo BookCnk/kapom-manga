@@ -3,7 +3,7 @@ import Footer from "@/components/footer";
 import { Clock, TrendingUp, Heart } from "lucide-react";
 import { Suspense } from "react";
 import { homeData } from "@/lib/mock/homeData";
-
+import LatestUpdatesList from "@/components/home/LatestUpdatesList";
 import FeaturedHero from "@/components/home/FeaturedHero";
 import SectionHeader from "@/components/home/SectionHeader";
 import MangaGrid from "@/components/home/MangaGrid";
@@ -62,7 +62,7 @@ export default function Home() {
                   iconClassName="text-orange-500"
                   viewAllHref="/latest"
                 />
-                <MangaGrid items={latestUpdates} variant="grid-4x4" />
+                <LatestUpdatesList items={latestUpdates} limit={12} />{" "}
               </section>
             </div>
 

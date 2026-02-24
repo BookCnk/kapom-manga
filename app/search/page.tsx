@@ -52,6 +52,8 @@ function buildSearchText(m: MangaCard): string {
   );
 }
 
+export const dynamic = "force-dynamic";
+
 export default function SearchPage({ searchParams }: SearchPageProps) {
   const rawQuery = searchParams.q ?? "";
   const normalizedQuery = normalize(rawQuery);
@@ -141,4 +143,3 @@ export default function SearchPage({ searchParams }: SearchPageProps) {
     </>
   );
 }
-

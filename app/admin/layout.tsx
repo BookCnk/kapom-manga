@@ -1,4 +1,6 @@
+// app/admin/layout.tsx
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import {
   AdminSidebarDesktop,
   AdminSidebarMobile,
@@ -17,12 +19,16 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen bg-background">
       {/* Desktop sidebar */}
-      <AdminSidebarDesktop />
+      <Suspense fallback={null}>
+        <AdminSidebarDesktop />
+      </Suspense>
 
       {/* Main */}
       <main className="md:ml-64">
         {/* Mobile header (glass) */}
-        <AdminSidebarMobile />
+        <Suspense fallback={null}>
+          <AdminSidebarMobile />
+        </Suspense>
 
         <div className="p-6 md:p-8">{children}</div>
       </main>
