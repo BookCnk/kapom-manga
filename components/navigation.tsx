@@ -1,27 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import {
-  Search,
-  Bookmark,
-  User,
-  Sun,
-  Moon,
-  LogIn,
-  UserPlus,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, Sun, Moon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
-
-/* ✅ เพิ่ม dropdown */
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import UserMenu from "@/components/user/UserMenu";
 
 const NAV_LINKS = [
   { label: "หน้าแรก", href: "/" },
@@ -98,8 +81,6 @@ export default function Navigation() {
             <DesktopLinks />
           </div>
 
-         
-
           <div className="flex items-center gap-2">
             <ThemeToggle />
 
@@ -108,67 +89,11 @@ export default function Navigation() {
             {/* Search shortcut (แทน Bookmark ชั่วคราว) */}
             <Link
               href="/search"
-              className="p-2 rounded-full hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-            >
+              className="p-2 rounded-full hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
               <Search className="w-[22px] h-[22px]" />
             </Link>
 
-            {/* 🔥 Profile Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="group p-0 h-auto hover:bg-transparent">
-                  <div className="w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center overflow-hidden">
-                    <User className="w-[18px] h-[18px] text-muted-foreground group-hover:text-orange-500 transition-colors" />
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-
-              <DropdownMenuContent
-                align="end"
-                className="
-    w-56 
-    rounded-2xl 
-    border border-border 
-    bg-card/95 backdrop-blur-md 
-    shadow-xl 
-    p-2
-  ">
-                <DropdownMenuItem asChild>
-                  <Link
-                    href="/login"
-                    className="
-        flex items-center gap-2
-        rounded-xl px-3 py-2
-        text-sm font-medium
-        transition-all
-        hover:bg-primary/10
-        hover:text-primary
-      ">
-                    <LogIn className="h-4 w-4" />
-                    เข้าสู่ระบบ
-                  </Link>
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator className="my-2" />
-
-                <DropdownMenuItem asChild>
-                  <Link
-                    href="/register"
-                    className="
-        flex items-center gap-2
-        rounded-xl px-3 py-2
-        text-sm font-medium
-        transition-all
-        hover:bg-muted
-      ">
-                    <UserPlus className="h-4 w-4" />
-                    สมัครสมาชิก
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <UserMenu />
           </div>
         </div>
       </div>

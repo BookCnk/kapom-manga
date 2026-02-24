@@ -4,13 +4,14 @@ import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, LogIn } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [redirectTo, setRedirectTo] = useState("/");
@@ -26,30 +27,17 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      const result = await login(email, password);
 
-      const json = (await response.json()) as {
-        error?: string;
-        session?: { token: string; expiresAt: string };
-        user?: { id: number; email: string; name: string | null; role: string };
-      };
-
-      if (!response.ok || !json.session || !json.user) {
-        throw new Error(json.error || "Login failed");
+      if (result.success) {
+        router.replace(redirectTo || "/");
+      } else {
+        setError(result.error || "Login failed");
       }
-
-      const storage = rememberMe ? window.localStorage : window.sessionStorage;
-      storage.setItem("rtn_session_token", json.session.token);
-      storage.setItem("rtn_session_expires_at", json.session.expiresAt);
-      storage.setItem("rtn_user", JSON.stringify(json.user));
-
-      router.replace(redirectTo || "/");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Login failed");
+      setError(
+        submitError instanceof Error ? submitError.message : "Login failed",
+      );
     } finally {
       setLoading(false);
     }
@@ -64,7 +52,9 @@ export default function LoginPage() {
               RTN
             </span>
           </Link>
-          <p className="text-sm text-muted-foreground mt-2">Login to continue</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Login to continue
+          </p>
         </div>
 
         <div className="bg-card rounded-2xl border border-border shadow-sm p-6 sm:p-7">
@@ -76,7 +66,9 @@ export default function LoginPage() {
 
           <form className="space-y-4" onSubmit={onSubmit}>
             <div>
-              <label className="text-sm font-medium text-foreground">Email</label>
+              <label className="text-sm font-medium text-foreground">
+                Email
+              </label>
               <div className="mt-2 relative">
                 <Mail
                   className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground w-[18px] h-[18px]"
@@ -124,16 +116,6 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
-              <input
-                type="checkbox"
-                className="accent-orange-500"
-                checked={rememberMe}
-                onChange={(event) => setRememberMe(event.target.checked)}
-              />
-              Remember me
-            </label>
-
             {error ? (
               <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
@@ -162,4 +144,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

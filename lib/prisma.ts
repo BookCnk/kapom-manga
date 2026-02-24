@@ -12,12 +12,7 @@ if (!connectionString) {
   throw new Error("Missing DATABASE_URL in environment");
 }
 
-const adapter = new PrismaPg(
-  new Pool({
-    connectionString,
-    ssl: { rejectUnauthorized: false },
-  }),
-);
+const adapter = new PrismaPg(new Pool({ connectionString }));
 
 export const prisma =
   globalForPrisma.prisma ??

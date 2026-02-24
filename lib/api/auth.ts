@@ -9,7 +9,9 @@ type AuthUser = {
   role: UserRole;
 };
 
-async function getUserBySessionToken(token: string): Promise<AuthUser | null> {
+export async function getUserBySessionToken(
+  token: string,
+): Promise<AuthUser | null> {
   const session = await prisma.session.findUnique({
     where: { token },
     include: { user: { select: { id: true, email: true, role: true } } },
@@ -64,4 +66,3 @@ export async function requireRole(
   }
   return user;
 }
-
