@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import TopLoader from "@/components/TopLoader";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "RTN - Webtoon Platform",
@@ -29,7 +30,9 @@ export default function RootLayout({
       </head>
       <body className="antialiased selection:bg-orange-200 selection:text-orange-900">
         <Providers>
-          <TopLoader />
+          <Suspense fallback={null}>
+            <TopLoader />
+          </Suspense>
           {children}
         </Providers>
       </body>

@@ -4,6 +4,7 @@ import SearchBar from "@/components/home/SearchBar";
 import SearchGenreFilter from "@/components/home/SearchGenreFilter";
 import SearchResultCard from "@/components/search/SearchResultCard";
 import { homeData, MangaCard } from "@/lib/mock/homeData";
+import { Suspense } from "react";
 
 type SearchPageProps = {
   searchParams: {
@@ -98,10 +99,13 @@ export default function SearchPage({ searchParams }: SearchPageProps) {
 
         {/* Filters row */}
         <section className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-          <SearchGenreFilter
-            genres={homeData.genres}
-            currentGenre={selectedGenre}
-          />
+          <Suspense
+            fallback={<div className="h-9 rounded-xl border border-border bg-card" />}>
+            <SearchGenreFilter
+              genres={homeData.genres}
+              currentGenre={selectedGenre}
+            />
+          </Suspense>
           <button className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
             <span>สถานะ</span>
             <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>
