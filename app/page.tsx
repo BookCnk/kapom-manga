@@ -23,22 +23,6 @@ export default function Home() {
             <FeaturedHero featured={featured} />
             <section>
               <SectionHeader
-                title="อัพเดทล่าสุด"
-                description="การ์ตูนตอนใหม่ที่เพิ่งอัพเดท"
-                icon={Clock}
-                iconClassName="text-orange-500"
-                viewAllHref="/latest"
-              />
-              <MangaGrid
-                items={latestUpdates}
-                variant="scroller"
-                limit={5}
-                cardSize="lg"
-              />
-            </section>
-
-            <section>
-              <SectionHeader
                 title="ขายดีประจำสัปดาห์"
                 description="การ์ตูนขายดีที่สุดในสัปดาห์นี้"
                 icon={TrendingUp}
@@ -52,7 +36,6 @@ export default function Home() {
                 cardSize="lg"
               />
             </section>
-
             <section>
               <SectionHeader
                 title="ผู้คนชื่นชอบประจำสัปดาห์"
@@ -63,6 +46,21 @@ export default function Home() {
               />
               <MangaGrid
                 items={mostLiked}
+                variant="scroller"
+                limit={5}
+                cardSize="lg"
+              />
+            </section>
+            <section>
+              <SectionHeader
+                title="อัพเดทล่าสุด"
+                description="การ์ตูนตอนใหม่ที่เพิ่งอัพเดท"
+                icon={Clock}
+                iconClassName="text-orange-500"
+                viewAllHref="/latest"
+              />
+              <MangaGrid
+                items={latestUpdates}
                 variant="scroller"
                 limit={5}
                 cardSize="lg"
