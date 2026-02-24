@@ -62,19 +62,6 @@ function DesktopLinks() {
   );
 }
 
-function DesktopSearch() {
-  return (
-    <div className="hidden lg:flex flex-1 max-w-md mx-8 relative">
-      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground w-[18px] h-[18px]" />
-      <input
-        type="text"
-        placeholder="ค้นหาชื่อเรื่อง..."
-        className="w-full pl-10 pr-4 py-2 bg-muted border border-transparent rounded-full text-sm focus:bg-background focus:border-orange-500/30 focus:ring-4 focus:ring-orange-500/10 outline-none transition-all"
-      />
-    </div>
-  );
-}
-
 function ThemeToggle() {
   const { theme, setTheme, systemTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -111,18 +98,20 @@ export default function Navigation() {
             <DesktopLinks />
           </div>
 
-          <DesktopSearch />
+         
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
 
-            {/* Bookmark */}
-            <button className="p-2 rounded-full hover:bg-accent transition-colors text-muted-foreground hover:text-foreground relative">
-              <Bookmark className="w-[22px] h-[22px]" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-orange-500 rounded-full border border-background" />
-            </button>
-
             <div className="hidden sm:block w-px h-5 bg-border mx-1" />
+
+            {/* Search shortcut (แทน Bookmark ชั่วคราว) */}
+            <Link
+              href="/search"
+              className="p-2 rounded-full hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+            >
+              <Search className="w-[22px] h-[22px]" />
+            </Link>
 
             {/* 🔥 Profile Dropdown */}
             <DropdownMenu>

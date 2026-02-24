@@ -1,6 +1,8 @@
-import Image from "next/image";
+"use client";
+
 import Link from "next/link";
-import { Eye, BookOpen, User } from "lucide-react";
+import { useState } from "react";
+import { Eye, BookOpen, User, CameraOff } from "lucide-react";
 import type { MangaCard as MangaCardType } from "@/lib/mock/homeData";
 
 type Props = {
@@ -23,6 +25,7 @@ export default function MangaCard({
   className,
   compact = false,
 }: Props) {
+  const [hasImageError, setHasImageError] = useState(false);
   const isHorizontal = variant === "horizontal";
   const latest = item.latestChapter ?? item.totalChapters;
 
@@ -48,18 +51,26 @@ export default function MangaCard({
         }>
         <div
           className={[
-            "relative",
+            "relative overflow-hidden bg-muted",
             isHorizontal ? "h-full" : "aspect-[3/4]",
           ].join(" ")}>
-          <Image
-            src={
-              item.coverImage ||
-              "https://images.unsplash.com/photo-1526948128573-703ee1aeb6fa?q=80&w=600&auto=format&fit=crop"
-            }
-            alt={item.title}
-            fill
-            className="object-cover group-hover:scale-[1.03] transition-transform duration-500"
-          />
+          {hasImageError || !item.coverImage || (typeof item.coverImage === 'string' && item.coverImage.trim() === '') ? (
+            <div className="h-full w-full flex flex-col items-center justify-center bg-muted/80 text-[10px] text-muted-foreground select-none">
+              <div className="w-8 h-8 rounded-full border border-border flex items-center justify-center mb-1 relative">
+                <CameraOff className="w-4 h-4" />
+                <div className="absolute inset-0 rounded-full border border-border/70 border-dashed" />
+              </div>
+              <span className="text-[10px] tracking-tight">No Image</span>
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.coverImage}
+              alt={item.title}
+              className="h-full w-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+              onError={() => setHasImageError(true)}
+            />
+          )}
 
           {/* Top badges */}
           <div className="absolute top-2 left-2 flex items-center gap-1">

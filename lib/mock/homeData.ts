@@ -24,7 +24,8 @@ export type MangaCard = {
 
   // latest update
   latestChapter?: number;
-  latestUpdatedLabel?: string; // "15 นาทีที่แล้ว" (หรือจะใช้ date จริงก็ได้)
+  latestUpdatedLabel?: string; // label แบบกำหนดเอง เช่น "15 นาทีที่แล้ว" (fallback)
+  updatedAt?: string; // เวลาอัปเดตล่าสุด (ISO string จาก database)
 
   // badges
   isNew?: boolean; // โชว์ UP
@@ -58,8 +59,9 @@ export const homeData: HomePageData = {
       totalChapters: 210,
       latestChapter: 210,
       latestUpdatedLabel: "วันนี้",
+      updatedAt: "2026-02-24T10:00:00+07:00",
       isNew: true,
-      tags: ["Exclusive"],
+      tags: [],
       genre: "แฟนตาซี",
       translator: "RTN Team",
     },
@@ -68,7 +70,7 @@ export const homeData: HomePageData = {
       slug: "shadow-assassin-academy",
       title: "โรงเรียนมือสังหารเงา",
       description:
-        "ในโลกที่นักฆ่าคืออาชีพชั้นสูง เด็กหนุ่มผู้ไร้พรสวรรค์ต้องพิสูจน์ตัวเองในโรงเรียนสุดโหด ที่ความล้มเหลวหมายถึงความตาย",
+        "ในโลกที่นักฆ่าคืออาชีพชั้นสูง เด็กหนุ่มผู้ไร้พรสวรรค์ต้องพิสูจน์ตัวเองในโรงเรียนสุดโหด ที่ความล้มเหลวหมายถึงความตายในโลกที่นักฆ่าคืออาชีพชั้นสูง เด็กหนุ่มผู้ไร้พรสวรรค์ต้องพิสูจน์ตัวเองในโรงเรียนสุดโหด ที่ความล้มเหลวหมายถึงความตายในโลกที่นักฆ่าคืออาชีพชั้นสูง เด็กหนุ่มผู้ไร้พรสวรรค์ต้องพิสูจน์ตัวเองในโรงเรียนสุดโหด ที่ความล้มเหลวหมายถึงความตาย",
       coverImage:
         "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1200&auto=format&fit=crop",
       views: 22400,
@@ -76,6 +78,7 @@ export const homeData: HomePageData = {
       totalChapters: 148,
       latestChapter: 148,
       latestUpdatedLabel: "เมื่อวาน",
+      updatedAt: "2026-02-23T18:30:00+07:00",
       isNew: false,
       tags: ["Hot"],
       genre: "แอคชั่น",
@@ -94,6 +97,7 @@ export const homeData: HomePageData = {
       totalChapters: 320,
       latestChapter: 320,
       latestUpdatedLabel: "3 วันที่แล้ว",
+      updatedAt: "2026-02-21T09:15:00+07:00",
       isNew: false,
       tags: ["Trending"],
       genre: "ต่างโลก",
@@ -115,8 +119,10 @@ export const homeData: HomePageData = {
       totalChapters: 145,
       latestChapter: 145,
       latestUpdatedLabel: "15 นาทีที่แล้ว",
+      updatedAt: "2026-02-24T14:45:00+07:00",
       isNew: true,
       genre: "แอคชั่น",
+      tags: ["ย้อนเวลา", "เกิดใหม่", "ดราม่า","ย้อนเวลา","มืดมน"],
       translator: "Kaizoku",
     },
     {
@@ -131,8 +137,10 @@ export const homeData: HomePageData = {
       totalChapters: 42,
       latestChapter: 42,
       latestUpdatedLabel: "1 ชม.ที่แล้ว",
+      updatedAt: "2026-02-24T13:50:00+07:00",
       isNew: false,
       genre: "โรแมนติก",
+      tags: ["นางร้าย", "เกมจีบหนุ่ม", "ต่างโลก"],
       translator: "Sweetheart",
     },
     {
@@ -147,8 +155,10 @@ export const homeData: HomePageData = {
       totalChapters: 89,
       latestChapter: 89,
       latestUpdatedLabel: "2 ชม.ที่แล้ว",
+      updatedAt: "2026-02-24T12:30:00+07:00",
       isNew: true,
       genre: "คอมเมดี้",
+      tags: ["สโลว์ไลฟ์", "แฟนตาซี", "ตลก"],
       translator: "FunnyGuy",
     },
     {
@@ -163,8 +173,10 @@ export const homeData: HomePageData = {
       totalChapters: 210,
       latestChapter: 210,
       latestUpdatedLabel: "3 ชม.ที่แล้ว",
+      updatedAt: "2026-02-24T11:20:00+07:00",
       isNew: false,
       genre: "แฟนตาซี",
+      tags: ["เวทมนตร์", "มืดมน", "ต่อสู้"],
     },
   ],
 
@@ -180,6 +192,7 @@ export const homeData: HomePageData = {
       rating: 9.8,
       totalChapters: 210,
       genre: "แฟนตาซี",
+      tags: ["กำลังภายใน", "มังกร", "ผจญภัย"],
     },
     {
       id: "m-004",
@@ -192,6 +205,7 @@ export const homeData: HomePageData = {
       rating: 9.5,
       totalChapters: 89,
       genre: "คอมเมดี้",
+      tags: ["สโลว์ไลฟ์", "เบาสมอง"],
     },
     {
       id: "m-003",
@@ -204,6 +218,7 @@ export const homeData: HomePageData = {
       rating: 9.2,
       totalChapters: 42,
       genre: "โรแมนติก",
+      tags: ["นางร้าย", "ดราม่า"],
     },
     {
       id: "m-006",
@@ -215,6 +230,7 @@ export const homeData: HomePageData = {
       rating: 8.9,
       totalChapters: 76,
       genre: "แอคชั่น",
+      tags: ["ดันเจี้ยน", "ทีมสำรวจ"],
     },
     {
       id: "m-007",
@@ -226,6 +242,7 @@ export const homeData: HomePageData = {
       rating: 8.7,
       totalChapters: 145,
       genre: "แอคชั่น",
+      tags: ["ย้อนเวลา", "เกิดใหม่", "ดราม่า","ย้อนเวลา","มืดมน","ย้อนเวลา", "เกิดใหม่", "ดราม่า","ย้อนเวลา","มืดมน","ย้อนเวลา", "เกิดใหม่", "ดราม่า","ย้อนเวลา","มืดมน"],
     },
   ],
 
@@ -244,6 +261,7 @@ export const homeData: HomePageData = {
       latestChapter: 156,
       latestUpdatedLabel: "2 วันที่แล้ว",
       genre: "แอคชั่น",
+      tags: ["ดาบ", "แฟนตาซี", "ต่อสู้"],
     },
     {
       id: "m-009",
@@ -258,6 +276,7 @@ export const homeData: HomePageData = {
       latestChapter: 88,
       latestUpdatedLabel: "1 วันที่แล้ว",
       genre: "ดราม่า",
+      tags: ["ครอบครัว", "ชนชั้นสูง"],
     },
     {
       id: "m-010",
@@ -273,6 +292,7 @@ export const homeData: HomePageData = {
       latestUpdatedLabel: "วันนี้",
       isNew: true,
       genre: "โรงเรียน",
+      tags: ["อัจฉริยะ", "โรงเรียนเวทมนตร์"],
     },
     {
       id: "m-011",

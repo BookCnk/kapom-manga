@@ -4,18 +4,24 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Episode } from "@/lib/mock/contentData";
 
+type EpisodeSortMode = "latest" | "oldest";
+
 interface EpisodeListProps {
   episodes: Episode[];
   /** จำนวนตอนต่อกลุ่ม เช่น 5 จะได้กลุ่ม 1-5, 6-10, ... */
   visibleLimit?: number;
+  /** ข้อความบอกเวลาตอนอัปเดตล่าสุดของเรื่อง เช่น "20 ก.พ. 2569 14:56 น." */
+  lastUpdatedText?: string;
 }
 
 export default function EpisodeList({
   episodes,
   visibleLimit = 5,
+  lastUpdatedText,
 }: EpisodeListProps) {
   // เก็บสถานะเปิด/ปิดของแต่ละกลุ่ม (index ของกลุ่ม -> true/false)
   const [openGroups, setOpenGroups] = useState<Record<number, boolean>>({});
+  const [sortMode, setSortMode] = useState<EpisodeSortMode>("oldest");
 
   const toggleGroup = (groupIndex: number) => {
     setOpenGroups((prev) => ({
@@ -83,14 +89,85 @@ export default function EpisodeList({
     </div>
   );
 
+  const totalEpisodes = episodes.length;
+
+  // เรียงลำดับตอนตามโหมดที่เลือก
+  const sortedEpisodes = [...episodes].sort((a, b) => {
+    if (sortMode === "latest") {
+      // ตอนล่าสุดอยู่บนสุด (หมายเลขมาก -> ใหม่กว่า)
+      return b.number - a.number;
+    }
+    // ตอนแรกสุดอยู่บนสุด
+    return a.number - b.number;
+  });
+
+  const header = (
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+      <div>
+        <p className="text-sm font-semibold text-foreground">สารบัญ</p>
+        <p className="text-xs text-muted-foreground">
+          {totalEpisodes} ตอน
+          {lastUpdatedText && (
+            <>
+              {" "}
+              · เพิ่มตอนล่าสุด {lastUpdatedText}
+            </>
+          )}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>เรียงตาม</span>
+        <div className="inline-flex rounded-full border border-border bg-background p-0.5">
+          <button
+            type="button"
+            onClick={() => setSortMode("oldest")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              sortMode === "oldest"
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            ตอนแรกสุด
+          </button>
+          <button
+            type="button"
+            onClick={() => setSortMode("latest")}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              sortMode === "latest"
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            ตอนล่าสุด
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ถ้าจำนวนตอนยังไม่ถึง limit (เช่น มีแค่ 1-5 ตอน) ให้แสดงรายการตรง ๆ
+  // ไม่ต้องมีหัวข้อช่วงตอน (1-5, 6-10, ...)
+  if (sortedEpisodes.length <= visibleLimit) {
+    return (
+      <div className="space-y-3">
+        {header}
+        <div className="space-y-2">
+          {sortedEpisodes.map(renderEpisode)}
+        </div>
+      </div>
+    );
+  }
+
   // แบ่งตอนเป็นกลุ่ม ๆ ตาม visibleLimit เช่น 1-5, 6-10, ...
   const groups: Episode[][] = [];
-  for (let i = 0; i < episodes.length; i += visibleLimit) {
-    groups.push(episodes.slice(i, i + visibleLimit));
+  for (let i = 0; i < sortedEpisodes.length; i += visibleLimit) {
+    groups.push(sortedEpisodes.slice(i, i + visibleLimit));
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {header}
       {groups.map((groupEpisodes, index) => {
         if (groupEpisodes.length === 0) return null;
 

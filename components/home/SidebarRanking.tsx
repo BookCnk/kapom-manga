@@ -1,9 +1,13 @@
+"use client";
+
 import Link from "next/link";
-import Image from "next/image";
-import { Star } from "lucide-react";
+import { useState } from "react";
+import { Star, CameraOff } from "lucide-react";
 import type { MangaCard as MangaCardType } from "@/lib/mock/homeData";
 
 export default function SidebarRanking({ items }: { items: MangaCardType[] }) {
+  const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
+
   return (
     <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
       <div className="flex items-center justify-between mb-5">
@@ -28,15 +32,23 @@ export default function SidebarRanking({ items }: { items: MangaCardType[] }) {
                 </span>
 
                 <div className="w-14 h-20 rounded-lg bg-muted overflow-hidden shrink-0 border border-border">
-                  {item.coverImage ? (
-                    <Image
+                  {imageErrors.has(index) || !item.coverImage || (typeof item.coverImage === 'string' && item.coverImage.trim() === '') ? (
+                    <div className="h-full w-full flex flex-col items-center justify-center bg-muted/80 text-[8px] text-muted-foreground select-none">
+                      <div className="w-6 h-6 rounded-full border border-border flex items-center justify-center mb-0.5 relative">
+                        <CameraOff className="w-3 h-3" />
+                        <div className="absolute inset-0 rounded-full border border-border/70 border-dashed" />
+                      </div>
+                      <span className="text-[8px] tracking-tight">No Image</span>
+                    </div>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
                       src={item.coverImage}
                       alt={item.title}
-                      width={56}
-                      height={80}
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      onError={() => setImageErrors((prev) => new Set(prev).add(index))}
                     />
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0">

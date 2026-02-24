@@ -6,13 +6,20 @@ import { Plus, Info, List, BookOpen, Share2, ChevronDown } from "lucide-react";
 import Navigation from "@/components/navigation";
 import Breadcrumb from "@/components/Breadcrumb";
 import EpisodeList from "@/components/EpisodeList";
+import ReviewsSection from "@/components/ReviewsSection";
 import { contentData } from "@/lib/mock/contentData";
 
 // จำนวนตอนที่ต้องการให้โชว์ในกลุ่มหลัก (ด้านบน) ก่อนที่จะเก็บเป็น "ตอนก่อนหน้า"
-const EPISODE_VISIBLE_LIMIT = 5;
+const EPISODE_VISIBLE_LIMIT = 50;
+const FALLBACK_COVER =
+  "https://images.unsplash.com/photo-1526948128573-703ee1aeb6fa?q=80&w=600&auto=format&fit=crop";
 
 export default function ContentPage({ params }: { params: { id: string } }) {
   const content = contentData[params.id];
+  const episodes = content.episodes;
+  const lastEpisode = episodes[episodes.length - 1];
+  const lastUpdatedText = lastEpisode?.date;
+  const coverSrc = content.coverImage || FALLBACK_COVER;
 
   if (!content) {
     notFound();
@@ -36,7 +43,7 @@ export default function ContentPage({ params }: { params: { id: string } }) {
             {/* Glass Background using cover image */}
             <div className="absolute inset-0 -z-10 overflow-hidden rounded-3xl">
               <Image
-                src={content.coverImage}
+                src={coverSrc}
                 alt=""
                 fill
                 className="object-cover scale-110 blur-3xl opacity-40 saturate-150"
@@ -50,7 +57,7 @@ export default function ContentPage({ params }: { params: { id: string } }) {
                 {/* Cover Image */}
                 <div className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-muted shadow-lg border border-white/10">
                   <Image
-                    src={content.coverImage}
+                    src={coverSrc}
                     alt={content.title}
                     fill
                     className="object-cover"
@@ -127,14 +134,15 @@ export default function ContentPage({ params }: { params: { id: string } }) {
                 </button>
               </div>
 
-              {/* Tags */}
-              <div className="flex flex-wrap gap-2 mb-4">
+              {/* Tags (clickable, ขยับเข้ามาให้พอดีกับส่วนโค้งมน) */}
+              <div className="flex flex-wrap gap-2 mt-2 mb-3 pl-0.5">
                 {content.tags.map((tag) => (
-                  <span
+                  <Link
                     key={tag}
-                    className="px-2.5 py-1 bg-muted text-muted-foreground text-xs rounded-md">
-                    {tag}
-                  </span>
+                    href={`/search?q=${encodeURIComponent(tag)}`}
+                    className="px-2.5 py-1 bg-muted text-muted-foreground text-xs rounded-full hover:bg-orange-500/10 hover:text-orange-500 transition-colors">
+                    #{tag}
+                  </Link>
                 ))}
               </div>
 
@@ -146,6 +154,9 @@ export default function ContentPage({ params }: { params: { id: string } }) {
                 </button>
               </p>
             </div>
+
+            {/* Reviews */}
+            <ReviewsSection contentKey={params.id} />
 
             {/* Bulk Discount & Unlock */}
             <div className="flex items-center justify-between">
@@ -166,24 +177,12 @@ export default function ContentPage({ params }: { params: { id: string } }) {
               </button>
             </div>
 
-            {/* Sort Dropdown */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {content.episodes.length} Episodes
-                </span>
-              </div>
-              <button className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                <span>Latest</span>
-                <ChevronDown className="w-4 h-4" />
-              </button>
-            </div>
-
             {/* Episode List (limit ตอนบนตาม EPISODE_VISIBLE_LIMIT) */}
             <div className="pr-2">
               <EpisodeList
-                episodes={content.episodes}
+                episodes={episodes}
                 visibleLimit={EPISODE_VISIBLE_LIMIT}
+                lastUpdatedText={lastUpdatedText}
               />
             </div>
           </div>

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   Bookmark,
@@ -9,6 +8,7 @@ import {
   Eye,
   Play,
   Star,
+  CameraOff,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MangaCard as MangaCardType } from "@/lib/mock/homeData";
@@ -22,6 +22,7 @@ export default function FeaturedHero({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
 
   // drag/swipe
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -178,23 +179,36 @@ export default function FeaturedHero({
           ref={trackRef}
           className="absolute inset-0 flex transition-transform duration-700 ease-out"
           style={{ transform: `translateX(-${activeIndex * 100}%)` }}>
-          {slides.map((slide, index) => (
-            <div
-              key={slide.id}
-              className="relative min-w-full h-full"
-              draggable={false}
-              onDragStart={(ev) => ev.preventDefault()}>
-              <Image
-                src={slide.coverImage}
-                alt={slide.title}
-                fill
-                priority={index === 0}
+          {slides.map((slide, index) => {
+            const hasError = imageErrors.has(index) || !slide.coverImage || (typeof slide.coverImage === 'string' && slide.coverImage.trim() === '');
+            return (
+              <div
+                key={slide.id}
+                className="relative min-w-full h-full bg-muted"
                 draggable={false}
-                className="object-cover scale-[1.02] group-hover:scale-[1.07] transition-transform duration-700 ease-out"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/45 to-black/10" />
-            </div>
-          ))}
+                onDragStart={(ev) => ev.preventDefault()}>
+                {hasError ? (
+                  <div className="h-full w-full flex flex-col items-center justify-center bg-muted/80 text-muted-foreground select-none">
+                    <div className="w-16 h-16 rounded-full border border-border flex items-center justify-center mb-2 relative">
+                      <CameraOff className="w-8 h-8" />
+                      <div className="absolute inset-0 rounded-full border border-border/70 border-dashed" />
+                    </div>
+                    <span className="text-sm tracking-tight">No Image</span>
+                  </div>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={slide.coverImage}
+                    alt={slide.title}
+                    className="h-full w-full object-cover scale-[1.02] group-hover:scale-[1.07] transition-transform duration-700 ease-out"
+                    draggable={false}
+                    onError={() => setImageErrors((prev) => new Set(prev).add(index))}
+                  />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/45 to-black/10" />
+              </div>
+            );
+          })}
         </div>
 
         {/* Content */}
