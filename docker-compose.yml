@@ -3,15 +3,15 @@ services:
     image: postgres:16-alpine
     container_name: app-postgres
     environment:
-      POSTGRES_DB: manga
-      POSTGRES_USER: avnadmin
-      POSTGRES_PASSWORD: avnadmin_password
+      POSTGRES_DB: ${POSTGRES_DB:-manga}
+      POSTGRES_USER: ${POSTGRES_USER:-avnadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-avnadmin_password}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U avnadmin -d manga"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avnadmin} -d ${POSTGRES_DB:-manga}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -20,8 +20,8 @@ services:
     image: dpage/pgadmin4:8
     container_name: app-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin1234
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin1234}
     ports:
       - "5050:80"
     depends_on:
@@ -37,8 +37,10 @@ services:
     container_name: app-nextjs
     environment:
       NODE_ENV: development
-      # Use service name "postgres" inside docker network
-      DATABASE_URL: postgresql://avnadmin:avnadmin_password@postgres:5432/manga?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-avnadmin}:${POSTGRES_PASSWORD:-avnadmin_password}@postgres:5432/${POSTGRES_DB:-manga}?schema=public
+      # กัน chokidar ไม่เห็นไฟล์เปลี่ยนในบางเครื่อง/VM
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     ports:
       - "3000:3000"
     depends_on:
