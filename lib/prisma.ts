@@ -1,13 +1,10 @@
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { readFileSync } from "node:fs";
-import {
-  PrismaClient as PrismaClientConstructor,
-  type PrismaClient as PrismaClientType,
-} from "@/generated/prisma/client";
+import { PrismaClient } from "@prisma/client";
 
+// Keep a single PrismaClient instance across hot reloads in development
 const globalForPrisma = globalThis as unknown as {
-  prisma?: PrismaClientType;
+  prisma?: PrismaClient;
 };
 
 const connectionString = process.env.DATABASE_URL;
@@ -21,9 +18,10 @@ const adapter = new PrismaPg(
     ssl: { rejectUnauthorized: false },
   }),
 );
+
 export const prisma =
   globalForPrisma.prisma ??
-  new PrismaClientConstructor({
+  new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
