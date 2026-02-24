@@ -14,7 +14,15 @@ export async function POST(request: NextRequest) {
   try {
     const body = registerSchema.parse(await request.json());
     const email = body.email.toLowerCase();
+    console.log(
+      "DB_URL:",
+      process.env.DATABASE_URL?.replace(/:\/\/.*?:.*?@/, "://***:***@"),
+    );
 
+    const info = await prisma.$queryRawUnsafe(`
+  SELECT current_database() AS db, current_user AS usr, current_schema() AS sch
+`);
+    console.log("DB_INFO:", info);
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new HttpError(409, "Email is already registered");
@@ -40,4 +48,3 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error);
   }
 }
-
