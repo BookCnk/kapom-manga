@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { readFileSync } from "node:fs";
 import {
   PrismaClient as PrismaClientConstructor,
   type PrismaClient as PrismaClientType,
@@ -14,7 +15,16 @@ if (!connectionString) {
   throw new Error("Missing DATABASE_URL in environment");
 }
 
-const adapter = new PrismaPg(new Pool({ connectionString }));
+const sslCaPath = process.env.PG_SSL_CA_PATH;
+const allowSelfSigned = process.env.PG_SSL_ALLOW_SELF_SIGNED === "true";
+
+const ssl = sslCaPath
+  ? { ca: readFileSync(sslCaPath, "utf8"), rejectUnauthorized: true }
+  : allowSelfSigned
+    ? { rejectUnauthorized: false }
+    : undefined;
+
+const adapter = new PrismaPg(new Pool({ connectionString, ssl }));
 
 export const prisma =
   globalForPrisma.prisma ??
