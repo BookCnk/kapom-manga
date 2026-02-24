@@ -52,9 +52,12 @@ export default function MangaCard({
         <div
           className={[
             "relative overflow-hidden bg-muted",
-            isHorizontal ? "h-full" : "aspect-[3/4]",
+            isHorizontal ? "h-full" : compact ? "aspect-[4/5]" : "aspect-[3/4]",
           ].join(" ")}>
-          {hasImageError || !item.coverImage || (typeof item.coverImage === 'string' && item.coverImage.trim() === '') ? (
+          {hasImageError ||
+          !item.coverImage ||
+          (typeof item.coverImage === "string" &&
+            item.coverImage.trim() === "") ? (
             <div className="h-full w-full flex flex-col items-center justify-center bg-muted/80 text-[10px] text-muted-foreground select-none">
               <div className="w-8 h-8 rounded-full border border-border flex items-center justify-center mb-1 relative">
                 <CameraOff className="w-4 h-4" />
@@ -124,7 +127,7 @@ export default function MangaCard({
         <h3
           className={
             compact
-              ? "text-sm font-semibold text-foreground line-clamp-1 group-hover:text-orange-600 transition-colors"
+              ? "text-[13px] font-semibold text-foreground line-clamp-1 group-hover:text-orange-600 transition-colors"
               : "text-base font-semibold text-foreground line-clamp-2 group-hover:text-orange-600 transition-colors"
           }>
           {item.title}

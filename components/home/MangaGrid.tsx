@@ -4,7 +4,7 @@ import type { MangaCard as MangaCardType } from "@/lib/mock/homeData";
 type Props = {
   items: MangaCardType[];
   limit?: number;
-  variant?: "grid" | "scroller";
+  variant?: "grid" | "scroller" | "grid-4x4";
   cardSize?: "sm" | "md" | "lg"; // ✅ คุมขนาดตอนเป็น scroller
 };
 
@@ -44,6 +44,17 @@ export default function MangaGrid({
             ))}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (variant === "grid-4x4") {
+    const gridItems = items.slice(0, 16);
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+        {gridItems.map((item) => (
+          <MangaCard key={item.id} item={item} variant="grid" compact />
+        ))}
       </div>
     );
   }
