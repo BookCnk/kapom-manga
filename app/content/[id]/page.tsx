@@ -5,69 +5,11 @@ import { notFound } from "next/navigation";
 import { Plus, Info, List, BookOpen, Share2, ChevronDown } from "lucide-react";
 import Navigation from "@/components/navigation";
 import Breadcrumb from "@/components/Breadcrumb";
-import { contentData, Episode } from "@/lib/mock/contentData";
+import EpisodeList from "@/components/EpisodeList";
+import { contentData } from "@/lib/mock/contentData";
 
-function EpisodeList({ episodes }: { episodes: Episode[] }) {
-  return (
-    <div className="space-y-2">
-      {episodes.map((ep) => (
-        <div
-          key={ep.id}
-          className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border hover:border-orange-500/50 transition-colors cursor-pointer group">
-          {/* Episode Number */}
-          <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-            <span className="text-sm font-semibold text-muted-foreground">
-              {ep.number}
-            </span>
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-medium text-foreground group-hover:text-orange-600 transition-colors">
-              {ep.title}
-            </h4>
-            <p className="text-xs text-muted-foreground mt-0.5">{ep.date}</p>
-          </div>
-
-          <div className="text-right shrink-0 flex items-center gap-3">
-            {ep.isLocked && (
-              <svg
-                className="w-4 h-4 text-muted-foreground"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                />
-              </svg>
-            )}
-            {ep.price === "Free" ? (
-              <span className="text-sm font-medium text-green-600">Free</span>
-            ) : (
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                {ep.price}
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+// จำนวนตอนที่ต้องการให้โชว์ในกลุ่มหลัก (ด้านบน) ก่อนที่จะเก็บเป็น "ตอนก่อนหน้า"
+const EPISODE_VISIBLE_LIMIT = 5;
 
 export default function ContentPage({ params }: { params: { id: string } }) {
   const content = contentData[params.id];
@@ -237,9 +179,12 @@ export default function ContentPage({ params }: { params: { id: string } }) {
               </button>
             </div>
 
-            {/* Episode List - Scrollable */}
-            <div className="max-h-[400px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
-              <EpisodeList episodes={content.episodes} />
+            {/* Episode List (limit ตอนบนตาม EPISODE_VISIBLE_LIMIT) */}
+            <div className="pr-2">
+              <EpisodeList
+                episodes={content.episodes}
+                visibleLimit={EPISODE_VISIBLE_LIMIT}
+              />
             </div>
           </div>
         </div>
