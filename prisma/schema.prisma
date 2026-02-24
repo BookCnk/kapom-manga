@@ -69,6 +69,7 @@ model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   name      String?
+  passwordHash String?
   role      UserRole @default(USER)
   avatarUrl String?
   mangas         Manga[]          @relation("UserMangas")
