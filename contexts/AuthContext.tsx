@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
 import { UserRole } from "@/generated/prisma/enums";
 
 type User = {
@@ -14,7 +20,10 @@ type User = {
 type AuthContextType = {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateUser: (user: Partial<User>) => void;
 };
@@ -46,8 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success) {
-          setUser(data.data.user);
+        if (data.user) {
+          setUser(data.user);
         } else {
           localStorage.removeItem("session_token");
         }
@@ -73,13 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       const data = await response.json();
-
-      if (data.success) {
-        localStorage.setItem("session_token", data.data.session.token);
-        setUser(data.data.user);
+      console.log("Login response:", data);
+      if (response.ok && data.session && data.user) {
+        localStorage.setItem("session_token", data.session.token);
+        setUser(data.user);
         return { success: true };
       } else {
-        return { success: false, error: data.error || "Login failed" };
+        return { success: false, error: data.error || "Login failed " };
       }
     } catch (error) {
       console.error("Login error:", error);
