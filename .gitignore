@@ -71,3 +71,4 @@ coverage/
 *.pem
 *.key
 *.crt
+/generated/prisma
