@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import TopLoader from "@/components/TopLoader";
+import MainLayout from "@/components/MainLayout";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
@@ -33,7 +34,7 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <TopLoader />
           </Suspense>
-          {children}
+          <MainLayout>{children}</MainLayout>
         </Providers>
       </body>
     </html>

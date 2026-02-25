@@ -1,20 +1,30 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { MangaStatus, UserRole, Visibility } from "@/generated/prisma/enums";
+import { MangaStatus, UserRole, Visibility, CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
 import { ensureTranslatorOrAdmin } from "@/lib/api/permissions";
+import { allGenres, getGenreBySlug } from "@/lib/config/genres";
 
 const createMangaSchema = z.object({
   slug: z.string().trim().min(2).max(120),
   title: z.string().trim().min(1).max(200),
+  originalTitle: z.string().trim().max(200).optional(),
   description: z.string().trim().max(5000).optional(),
-  coverUrl: z.string().url().optional(),
-  bannerUrl: z.string().url().optional(),
+  coverUrl: z
+    .union([z.string().url(), z.literal("")])
+    .optional()
+    .transform((val) => (val && val !== "" ? val : undefined)),
+  bannerUrl: z
+    .union([z.string().url(), z.literal("")])
+    .optional()
+    .transform((val) => (val && val !== "" ? val : undefined)),
   status: z.nativeEnum(MangaStatus).default(MangaStatus.ONGOING),
   visibility: z.nativeEnum(Visibility).default(Visibility.PUBLIC),
   isMature: z.boolean().default(false),
+  genreSlugs: z.array(z.string().trim().min(1)).optional().default([]),
+  tags: z.array(z.string().trim().min(1).max(20)).optional().default([]),
 });
 
 export async function GET(request: NextRequest) {
@@ -24,23 +34,155 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") as MangaStatus | null;
     const creatorIdRaw = searchParams.get("creatorId");
     const creatorId = creatorIdRaw ? Number.parseInt(creatorIdRaw, 10) : undefined;
+    const search = searchParams.get("search") || "";
+    const genreIdRaw = searchParams.get("genreId");
+    const genreId = genreIdRaw ? Number.parseInt(genreIdRaw, 10) : undefined;
+    const isMatureRaw = searchParams.get("isMature");
+    const isMature = isMatureRaw === "true" ? true : isMatureRaw === "false" ? false : undefined;
+    const page = parseInt(searchParams.get("page") || "1", 10);
+    const limit = parseInt(searchParams.get("limit") || "10", 10);
 
+    // Build where clause
+    const where: any = {};
+
+    if (visibility && visibility in Visibility) {
+      where.visibility = visibility;
+    }
+    if (status && status in MangaStatus) {
+      where.status = status;
+    }
+    if (creatorId && Number.isInteger(creatorId) && creatorId > 0) {
+      where.creatorId = creatorId;
+    }
+    if (isMature !== undefined) {
+      where.isMature = isMature;
+    }
+
+    // Add search filter
+    if (search) {
+      where.OR = [
+        { title: { contains: search } },
+        { description: { contains: search } },
+      ];
+    }
+
+    // Add genre filter (using genreSlugs JSON field)
+    if (genreId && Number.isInteger(genreId) && genreId > 0) {
+      // Note: Prisma's JSON filtering is limited, so we'll filter in memory after fetching
+      // For now, we'll skip genre filtering in the query and filter in memory
+    }
+
+    // Get total count for pagination
+    const total = await prisma.manga.count({ where });
+
+    // Get mangas with pagination
     const mangas = await prisma.manga.findMany({
-      where: {
-        visibility: visibility && visibility in Visibility ? visibility : undefined,
-        status: status && status in MangaStatus ? status : undefined,
-        creatorId:
-          creatorId && Number.isInteger(creatorId) && creatorId > 0
-            ? creatorId
-            : undefined,
-      },
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
       orderBy: { createdAt: "desc" },
-      include: {
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        description: true,
+        coverUrl: true,
+        status: true,
+        visibility: true,
+        isMature: true,
+        views: true,
+        likesCount: true,
+        createdAt: true,
+        updatedAt: true,
+        genreSlugs: true,
         creator: { select: { id: true, name: true, email: true } },
+        _count: {
+          select: {
+            chapters: true,
+            bookmarks: true,
+            likes: true,
+            comments: true,
+          },
+        },
       },
     });
 
-    return ok({ mangas });
+    // Filter by genre if specified (in-memory filtering for JSON field)
+    let filteredMangas = mangas;
+    if (genreId && Number.isInteger(genreId) && genreId > 0) {
+      const genre = allGenres.find((g) => g.slug === genreId.toString());
+      if (genre) {
+        filteredMangas = mangas.filter((manga) => {
+          const slugs: string[] = Array.isArray(manga.genreSlugs) ? manga.genreSlugs : [];
+          return slugs.includes(genre.slug);
+        });
+      }
+    }
+
+    // Map genreSlugs to genre objects for frontend
+    const mangasWithGenres = filteredMangas.map((manga) => {
+      const slugs: string[] = Array.isArray(manga.genreSlugs) ? manga.genreSlugs : [];
+      const genres = slugs.map((slug) => {
+        const genre = getGenreBySlug(slug);
+        return genre ? { id: genre.slug, slug: genre.slug, name: genre.name } : null;
+      }).filter((g) => g !== null);
+      
+      return {
+        ...manga,
+        genres,
+      };
+    });
+
+    // Calculate sales for each manga
+    const mangasWithSales = await Promise.all(
+      mangasWithGenres.map(async (manga) => {
+        // Get all chapter IDs for this manga
+        const chapters = await prisma.chapter.findMany({
+          where: { mangaId: manga.id },
+          select: { id: true },
+        });
+        const chapterIds = chapters.map((ch) => ch.id);
+
+        if (chapterIds.length === 0) {
+          return { ...manga, sales: 0 };
+        }
+
+        // Get sales from coin transactions
+        const purchases = await prisma.coinTransaction.findMany({
+          where: {
+            type: CoinTransactionType.PURCHASE,
+            status: CoinTransactionStatus.SUCCESS,
+          },
+          select: {
+            amount: true,
+            metadata: true,
+      },
+    });
+
+        const relevantPurchases = purchases.filter((tx) => {
+          if (!tx.metadata || typeof tx.metadata !== "object") return false;
+          const metadata = tx.metadata as Record<string, unknown>;
+          const chapterId = metadata.chapterId;
+          return typeof chapterId === "number" && chapterIds.includes(chapterId);
+        });
+
+        const sales = relevantPurchases.reduce((sum, tx) => sum + tx.amount, 0);
+
+        return { ...manga, sales };
+      })
+    );
+
+    const totalPages = Math.ceil(total / limit);
+
+    return ok({
+      mangas: mangasWithSales,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    });
   } catch (error) {
     return handleRouteError(error);
   }
@@ -53,18 +195,92 @@ export async function POST(request: NextRequest) {
 
     const body = createMangaSchema.parse(await request.json());
 
-    const manga = await prisma.manga.create({
-      data: {
-        slug: body.slug,
-        title: body.title,
-        description: body.description,
-        coverUrl: body.coverUrl,
-        bannerUrl: body.bannerUrl,
-        status: body.status,
-        visibility: body.visibility,
-        isMature: body.isMature,
-        creatorId: actor.id,
-      },
+    // Validate genre slugs
+    const genreSlugs = Array.isArray(body.genreSlugs) ? body.genreSlugs : [];
+    for (const slug of genreSlugs) {
+      if (!getGenreBySlug(slug)) {
+        throw new Error(`Invalid genre slug: ${slug}`);
+      }
+    }
+
+    // Create manga with genres and tags in a transaction
+    const manga = await prisma.$transaction(async (tx) => {
+      const newManga = await tx.manga.create({
+        data: {
+          slug: body.slug,
+          title: body.title,
+          originalTitle: body.originalTitle || null,
+          description: body.description || null,
+          coverUrl: body.coverUrl || null,
+          bannerUrl: body.bannerUrl || null,
+          status: body.status,
+          visibility: body.visibility,
+          isMature: body.isMature,
+          genreSlugs: genreSlugs,
+          creatorId: actor.id,
+        },
+      });
+
+      // Create tags if provided
+      const tags = Array.isArray(body.tags) ? body.tags : [];
+      if (tags.length > 0) {
+        try {
+          // Create or get tags
+          const tagPromises = tags.map(async (tagName: string) => {
+            // Generate slug from tag name
+            const tagSlug = tagName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+            
+            // Ensure slug is not empty
+            if (!tagSlug) {
+              throw new Error(`Invalid tag name: ${tagName}`);
+            }
+            
+            // Try to find existing tag using upsert
+            const tag = await tx.tag.upsert({
+              where: { slug: tagSlug },
+              update: {},
+              create: {
+                name: tagName,
+                slug: tagSlug,
+              },
+            });
+
+            return tag.id;
+          });
+
+          const tagIds = await Promise.all(tagPromises);
+
+          // Create manga-tag relations (skip duplicates)
+          if (tagIds.length > 0) {
+            // Get existing relations to avoid duplicates
+            const existingRelations = await tx.mangaTag.findMany({
+              where: {
+                mangaId: newManga.id,
+                tagId: { in: tagIds },
+              },
+            });
+
+            const existingTagIds = new Set(existingRelations.map((r) => r.tagId));
+            const newTagIds = tagIds.filter((id) => !existingTagIds.has(id));
+
+            if (newTagIds.length > 0) {
+              await tx.mangaTag.createMany({
+                data: newTagIds.map((tagId) => ({
+                  mangaId: newManga.id,
+                  tagId,
+                })),
+                skipDuplicates: true,
+              });
+            }
+          }
+        } catch (tagError) {
+          console.error("Error creating tags:", tagError);
+          // Continue without tags if tag creation fails
+          // Don't throw error to allow manga creation to succeed
+        }
+      }
+
+      return newManga;
     });
 
     return ok({ manga }, 201);

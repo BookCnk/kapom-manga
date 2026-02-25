@@ -56,6 +56,15 @@ export async function POST(request: NextRequest, { params }: Params) {
     await ensureCanManageManga(actor, mangaId);
     const body = createChapterSchema.parse(await request.json());
 
+    // Check if slug already exists (slug must be unique globally)
+    const existingChapter = await prisma.chapter.findUnique({
+      where: { slug: body.slug },
+    });
+
+    if (existingChapter) {
+      throw new HttpError(400, "Chapter slug already exists");
+    }
+
     const chapter = await prisma.chapter.create({
       data: {
         mangaId,

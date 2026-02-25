@@ -16,7 +16,10 @@ type Params = {
 
 const createPageSchema = z.object({
   pageNo: z.number().int().positive(),
-  imageUrl: z.string().url(),
+  imageUrl: z.string().refine(
+    (val) => val.startsWith("data:") || val.startsWith("http://") || val.startsWith("https://"),
+    { message: "imageUrl must be a valid URL or data URL" }
+  ),
 });
 
 function parseChapterId(id: string) {

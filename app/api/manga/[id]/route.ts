@@ -8,6 +8,7 @@ import {
   ensureCanManageManga,
   ensureTranslatorOrAdmin,
 } from "@/lib/api/permissions";
+import { getGenreBySlug } from "@/lib/config/genres";
 
 type Params = {
   params: {
@@ -18,12 +19,15 @@ type Params = {
 const updateMangaSchema = z.object({
   slug: z.string().trim().min(2).max(120).optional(),
   title: z.string().trim().min(1).max(200).optional(),
+  originalTitle: z.string().trim().max(200).nullable().optional(),
   description: z.string().trim().max(5000).nullable().optional(),
   coverUrl: z.string().url().nullable().optional(),
   bannerUrl: z.string().url().nullable().optional(),
   status: z.nativeEnum(MangaStatus).optional(),
   visibility: z.nativeEnum(Visibility).optional(),
   isMature: z.boolean().optional(),
+  genreSlugs: z.array(z.string().trim().min(1)).optional(),
+  tags: z.array(z.string().trim().min(1).max(20)).optional().default([]),
 });
 
 function parseId(id: string) {
@@ -74,10 +78,75 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     await ensureCanManageManga(actor, mangaId);
 
     const body = updateMangaSchema.parse(await request.json());
+    const { genreSlugs, tags, ...mangaData } = body;
 
-    const manga = await prisma.manga.update({
+    // Validate genre slugs if provided
+    if (genreSlugs !== undefined) {
+      const slugs = Array.isArray(genreSlugs) ? genreSlugs : [];
+      for (const slug of slugs) {
+        if (!getGenreBySlug(slug)) {
+          throw new HttpError(400, `Invalid genre slug: ${slug}`);
+        }
+      }
+      mangaData.genreSlugs = slugs;
+    }
+
+    // Update manga with genres and tags in a transaction
+    const manga = await prisma.$transaction(async (tx) => {
+      // Update manga basic info
+      const updatedManga = await tx.manga.update({
       where: { id: mangaId },
-      data: body,
+        data: mangaData,
+      });
+
+      // Update tags if provided
+      if (tags !== undefined) {
+        // Delete existing tag relations
+        await (tx as any).mangaTag.deleteMany({
+          where: { mangaId },
+        });
+
+        // Create or get tags and create relations
+        if (Array.isArray(tags) && tags.length > 0) {
+          try {
+            const tagPromises = tags.map(async (tagName: string) => {
+              const tagSlug = tagName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+              
+              if (!tagSlug) {
+                return null;
+              }
+
+              const tag = await (tx as any).tag.upsert({
+                where: { slug: tagSlug },
+                update: {},
+                create: {
+                  name: tagName,
+                  slug: tagSlug,
+                },
+              });
+
+              return tag.id;
+            });
+
+            const tagIds = (await Promise.all(tagPromises)).filter(id => id !== null);
+
+            if (tagIds.length > 0) {
+              await (tx as any).mangaTag.createMany({
+                data: tagIds.map((tagId) => ({
+                  mangaId,
+                  tagId,
+                })),
+                skipDuplicates: true,
+              });
+            }
+          } catch (tagError) {
+            console.error("Error updating tags for manga:", tagError);
+            // Continue without tags if tag update fails
+          }
+        }
+      }
+
+      return updatedManga;
     });
 
     return ok({ manga });

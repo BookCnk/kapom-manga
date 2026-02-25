@@ -55,8 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.user) {
-          setUser(data.user);
+        if (data.success && data.data?.user) {
+          setUser(data.data.user);
         } else {
           localStorage.removeItem("session_token");
         }
@@ -83,12 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       console.log("Login response:", data);
-      if (response.ok && data.session && data.user) {
-        localStorage.setItem("session_token", data.session.token);
-        setUser(data.user);
+      
+      if (response.ok && data.success && data.data?.session && data.data?.user) {
+        localStorage.setItem("session_token", data.data.session.token);
+        setUser(data.data.user);
         return { success: true };
       } else {
-        return { success: false, error: data.error || "Login failed " };
+        return { success: false, error: data.error || "Login failed" };
       }
     } catch (error) {
       console.error("Login error:", error);

@@ -70,15 +70,15 @@ export default function ReaderPage({
         <div className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
           {/* <Breadcrumb
             items={[
-              { label: "การ์ตูน", href: "/manga" },
-              { label: content.title, href: `/content/${content.slug}` },
+              { label: "การ์ตูน", href: "/comic" },
+              { label: content.title, href: `/comic/${content.slug}` },
               { label: currentChapter?.title || "ตอนที่ 1" },
             ]}
           /> */}
           <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link
-                href={`/content/${content.slug}`}
+                href={`/comic/${content.slug}`}
                 className="p-2 hover:bg-muted rounded-lg transition-colors">
                 <Home className="w-5 h-5 text-muted-foreground" />
               </Link>

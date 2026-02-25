@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { UserRole } from "@/generated/prisma/enums";
 
 export default function UserMenu() {
-  const { user, logout } = useAuth();
+  const { user, logout, loading } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
 
@@ -23,18 +23,27 @@ export default function UserMenu() {
     return () => document.removeEventListener("click", handleClickOutside);
   }, [isOpen]);
 
+  // Show loading spinner while checking authentication
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center w-8 h-8">
+        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="flex items-center gap-2">
         <Link
           href="/login"
-          className="px-4 py-2 text-sm font-medium text-foreground hover:text-orange-600 transition-colors">
-          Login
+          className="px-4 py-2 text-sm font-medium text-foreground hover:text-orange-500 transition-colors">
+          เข้าสู่ระบบ
         </Link>
         <Link
           href="/register"
-          className="px-4 py-2 text-sm font-medium bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors">
-          Register
+          className="px-4 py-2 text-sm font-medium bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors">
+          สมัครสมาชิก
         </Link>
       </div>
     );
@@ -72,19 +81,18 @@ export default function UserMenu() {
     <div className="relative user-menu">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors">
-        <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white text-sm font-medium">
-          {user.name?.charAt(0)?.toUpperCase() || user.email.charAt(0).toUpperCase()}
-        </div>
-        <div className="hidden md:block text-left">
-          <div className="text-sm font-medium text-foreground">
-            {user.name || user.email}
+        className="flex items-center gap-2 p-1 rounded-full hover:bg-muted transition-colors border-2 border-purple-500">
+        {user.avatarUrl ? (
+          <img
+            src={user.avatarUrl}
+            alt={user.name || user.email}
+            className="w-8 h-8 rounded-full object-cover"
+          />
+        ) : (
+          <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white text-sm font-medium">
+            {user.name?.charAt(0)?.toUpperCase() || user.email.charAt(0).toUpperCase()}
           </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            {getRoleIcon(user.role)}
-            {getRoleLabel(user.role)}
-          </div>
-        </div>
+        )}
       </button>
 
       {isOpen && (

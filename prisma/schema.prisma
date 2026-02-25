@@ -63,56 +63,57 @@ enum TranslatorInviteStatus {
   REVOKED
 }
 
-
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  passwordHash String?
-  role      UserRole @default(USER)
-  avatarUrl String?
-  mangas         Manga[]          @relation("UserMangas")
-  bookmarks      Bookmark[]
-  readingHistory ReadingHistory[]
-  likes          Like[]
-  comments       Comment[]
-  sessions       Session[]
-  wallet         Wallet?
-  coinTransactions CoinTransaction[]
-  topupOrders    TopupOrder[]
+  id                        Int                @id @default(autoincrement())
+  email                     String             @unique
+  name                      String?
+  passwordHash              String?
+  role                      UserRole           @default(USER)
+  avatarUrl                 String?
+  mangas                    Manga[]            @relation("UserMangas")
+  bookmarks                 Bookmark[]
+  readingHistory            ReadingHistory[]
+  likes                     Like[]
+  comments                  Comment[]
+  sessions                  Session[]
+  wallet                    Wallet?
+  coinTransactions          CoinTransaction[]
+  topupOrders               TopupOrder[]
   sentTranslatorInvites     TranslatorInvite[] @relation("TranslatorInviter")
   receivedTranslatorInvites TranslatorInvite[] @relation("TranslatorInvitee")
   reviewedTranslatorInvites TranslatorInvite[] @relation("TranslatorInviteReviewer")
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
 }
 
 model Manga {
-  id          Int         @id @default(autoincrement())
-  slug        String      @unique
-  title       String
-  description String?
-  coverUrl    String?
-  bannerUrl   String?
-  status      MangaStatus @default(ONGOING)
-  visibility  Visibility  @default(PUBLIC)
-  isMature    Boolean     @default(false)
+  id            Int         @id @default(autoincrement())
+  slug          String      @unique
+  title         String
+  originalTitle String?
+  description   String?
+  coverUrl      String?
+  bannerUrl     String?
+  status        MangaStatus @default(ONGOING)
+  visibility    Visibility  @default(PUBLIC)
+  isMature      Boolean     @default(false)
+  genreSlugs    Json?       @default("[]")
 
   // stats
-  views       Int         @default(0)
-  likesCount  Int         @default(0)
+  views      Int @default(0)
+  likesCount Int @default(0)
 
   // author/uploader
   creatorId Int?
   creator   User? @relation("UserMangas", fields: [creatorId], references: [id], onDelete: SetNull)
 
   // relations
-  chapters    Chapter[]
-  genres      MangaGenre[]
-  bookmarks   Bookmark[]
+  chapters       Chapter[]
+  tags           MangaTag[]
+  bookmarks      Bookmark[]
   readingHistory ReadingHistory[]
-  likes       Like[]
-  comments    Comment[]
+  likes          Like[]
+  comments       Comment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -123,39 +124,38 @@ model Manga {
 }
 
 model Chapter {
-  id          Int        @id @default(autoincrement())
-  mangaId     Int
-  title       String
-  number      Float      // เช่น 1, 1.5, 12
-  slug        String     // เช่น "chapter-12"
+  id           Int     @id @default(autoincrement())
+  mangaId      Int
+  title        String
+  number       Float // เช่น 1, 1.5, 12
+  slug         String  @unique // เช่น "chapter-12" - unique globally like manga slug
   thumbnailUrl String?
-  isLocked    Boolean    @default(false)
-  priceCoins  Int        @default(0)
+  isLocked     Boolean @default(false)
+  priceCoins   Int     @default(0)
 
   // stats
-  views       Int        @default(0)
+  views Int @default(0)
 
-  manga       Manga      @relation(fields: [mangaId], references: [id], onDelete: Cascade)
-  pages       Page[]
-  comments    Comment[]
+  manga          Manga            @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  pages          Page[]
+  comments       Comment[]
   readingHistory ReadingHistory[]
 
   publishedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  @@unique([mangaId, slug])
   @@unique([mangaId, number])
   @@index([mangaId, publishedAt])
 }
 
 model Page {
-  id        Int      @id @default(autoincrement())
+  id        Int    @id @default(autoincrement())
   chapterId Int
   pageNo    Int
   imageUrl  String
 
-  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -163,23 +163,29 @@ model Page {
   @@index([chapterId])
 }
 
-model Genre {
-  id    Int    @id @default(autoincrement())
-  slug  String @unique
-  name  String @unique
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  slug String @unique
 
-  mangas MangaGenre[]
+  mangas MangaTag[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([slug])
 }
 
-model MangaGenre {
+model MangaTag {
   mangaId Int
-  genreId Int
+  tagId   Int
 
   manga Manga @relation(fields: [mangaId], references: [id], onDelete: Cascade)
-  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
-  @@id([mangaId, genreId])
-  @@index([genreId])
+  @@id([mangaId, tagId])
+  @@index([tagId])
 }
 
 model Bookmark {
@@ -230,20 +236,20 @@ model Like {
 }
 
 model Comment {
-  id        Int      @id @default(autoincrement())
+  id        Int  @id @default(autoincrement())
   userId    Int
   mangaId   Int?
   chapterId Int?
 
-  content   String
-  parentId  Int?
+  content  String
+  parentId Int?
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  manga     Manga?   @relation(fields: [mangaId], references: [id], onDelete: Cascade)
-  chapter   Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manga   Manga?   @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  chapter Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
-  parent    Comment? @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Comment[] @relation("CommentThread")
+  parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Comment[] @relation("CommentThread")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -259,7 +265,7 @@ model Session {
   token     String   @unique
   expiresAt DateTime
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -268,11 +274,11 @@ model Session {
 }
 
 model Wallet {
-  id          Int    @id @default(autoincrement())
-  userId      Int    @unique
-  balance     Int    @default(0)
-  totalTopup  Int    @default(0)
-  totalSpent  Int    @default(0)
+  id         Int @id @default(autoincrement())
+  userId     Int @unique
+  balance    Int @default(0)
+  totalTopup Int @default(0)
+  totalSpent Int @default(0)
 
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions CoinTransaction[]
@@ -308,16 +314,16 @@ model CoinTransaction {
 }
 
 model TopupOrder {
-  id           Int              @id @default(autoincrement())
-  userId       Int
-  coins        Int
-  amountMinor  Int
-  currency     String           @default("THB")
-  status       TopupOrderStatus @default(PENDING)
-  provider     String
-  providerRef  String?
-  expiresAt    DateTime?
-  paidAt       DateTime?
+  id          Int              @id @default(autoincrement())
+  userId      Int
+  coins       Int
+  amountMinor Int
+  currency    String           @default("THB")
+  status      TopupOrderStatus @default(PENDING)
+  provider    String
+  providerRef String?
+  expiresAt   DateTime?
+  paidAt      DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -329,23 +335,23 @@ model TopupOrder {
 }
 
 model TranslatorInvite {
-  id            Int                   @id @default(autoincrement())
-  code          String                @unique
-  inviterId     Int
-  inviteeEmail  String
-  inviteeUserId Int?
-  status        TranslatorInviteStatus @default(PENDING)
-  message       String?
-  expiresAt     DateTime
-  acceptedAt    DateTime?
+  id              Int                    @id @default(autoincrement())
+  code            String                 @unique
+  inviterId       Int
+  inviteeEmail    String
+  inviteeUserId   Int?
+  status          TranslatorInviteStatus @default(PENDING)
+  message         String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
   adminReviewerId Int?
   adminReviewedAt DateTime?
   adminReviewNote String?
   approvedAt      DateTime?
   rejectedAt      DateTime?
 
-  inviter User  @relation("TranslatorInviter", fields: [inviterId], references: [id], onDelete: Cascade)
-  invitee User? @relation("TranslatorInvitee", fields: [inviteeUserId], references: [id], onDelete: SetNull)
+  inviter       User  @relation("TranslatorInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee       User? @relation("TranslatorInvitee", fields: [inviteeUserId], references: [id], onDelete: SetNull)
   adminReviewer User? @relation("TranslatorInviteReviewer", fields: [adminReviewerId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())

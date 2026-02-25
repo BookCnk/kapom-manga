@@ -11,11 +11,16 @@ export class HttpError extends Error {
 }
 
 export function ok<T>(data: T, status = 200) {
-  return NextResponse.json(data, { status });
+  return NextResponse.json({ success: true, data }, { status });
+}
+
+// Helper to get data from ok response
+export function getOkData<T>(response: { success: true; data: T }): T {
+  return response.data;
 }
 
 export function fail(status: number, message: string) {
-  return NextResponse.json({ error: message }, { status });
+  return NextResponse.json({ success: false, error: message }, { status });
 }
 
 export function handleRouteError(error: unknown) {
@@ -25,7 +30,7 @@ export function handleRouteError(error: unknown) {
 
   if (error instanceof ZodError) {
     return NextResponse.json(
-      { error: "Invalid request body", details: error.flatten() },
+      { success: false, error: "Invalid request body", details: error.flatten() },
       { status: 400 },
     );
   }

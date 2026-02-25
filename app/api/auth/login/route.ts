@@ -30,17 +30,47 @@ export async function POST(request: NextRequest) {
       throw new HttpError(401, "Invalid email or password");
     }
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
-    const token = randomBytes(32).toString("hex");
-
-    await prisma.session.create({
-      data: {
+    // Check if user has an existing valid session
+    const existingSession = await prisma.session.findFirst({
+      where: {
         userId: user.id,
-        token,
-        expiresAt,
+        expiresAt: {
+          gt: new Date(), // Not expired
+        },
+      },
+      orderBy: {
+        expiresAt: "desc", // Get the most recent session
       },
     });
+
+    let token: string;
+    let expiresAt: Date;
+
+    if (existingSession) {
+      // Use existing session and extend it
+      token = existingSession.token;
+      expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // Extend for another 30 days
+      
+      // Update the existing session
+      await prisma.session.update({
+        where: { id: existingSession.id },
+        data: { expiresAt },
+      });
+    } else {
+      // Create new session
+      expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+      token = randomBytes(32).toString("hex");
+
+      await prisma.session.create({
+        data: {
+          userId: user.id,
+          token,
+          expiresAt,
+        },
+      });
+    }
 
     return ok({
       session: {

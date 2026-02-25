@@ -1,28 +1,98 @@
-import { BarChart3, Users, FileText, DollarSign } from "lucide-react";
+"use client";
 
-const stats = [
-  {
-    label: "ผลงานทั้งหมด",
-    value: "12",
-    icon: FileText,
-    color: "text-blue-500",
-  },
-  {
-    label: "คอมมิชชั่น",
-    value: "8",
-    icon: DollarSign,
-    color: "text-green-500",
-  },
-  { label: "ผู้ใช้", value: "256", icon: Users, color: "text-purple-500" },
-  {
-    label: "ยอดเข้าชม",
-    value: "1.2k",
-    icon: BarChart3,
-    color: "text-orange-500",
-  },
-];
+import { useState, useEffect } from "react";
+import { BarChart3, Users, FileText, BookOpen, DollarSign } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { UserRole } from "@/generated/prisma/enums";
+
+type Stats = {
+  totalMangas: number;
+  totalUsers: number;
+  totalViews: number;
+  totalChapters: number;
+  myMangasCount: number | null;
+};
 
 export default function AdminPage() {
+  const { user } = useAuth();
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/api/admin/stats", {
+          headers: {
+            "x-session-token": localStorage.getItem("session_token") || localStorage.getItem("sessionToken") || "",
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setStats(data.data.stats);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch stats:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchStats();
+    }
+  }, [user]);
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
+    return num.toString();
+  };
+
+  const isAdmin = user?.role === UserRole.ADMIN;
+  const isTranslator = user?.role === UserRole.TRANSLATOR;
+
+  const displayStats = [
+    {
+      label: isAdmin ? "มังงะทั้งหมด" : "ผลงานของฉัน",
+      value: loading
+        ? "..."
+        : isAdmin
+        ? stats?.totalMangas.toString() || "0"
+        : stats?.myMangasCount?.toString() || "0",
+      icon: FileText,
+      color: "text-blue-500",
+    },
+    ...(isAdmin
+      ? [
+          {
+            label: "ผู้ใช้ทั้งหมด",
+            value: loading ? "..." : stats?.totalUsers.toString() || "0",
+            icon: Users,
+            color: "text-purple-500",
+          },
+          {
+            label: "ยอดเข้าชม",
+            value: loading
+              ? "..."
+              : formatNumber(stats?.totalViews || 0),
+            icon: BarChart3,
+            color: "text-orange-500",
+          },
+          {
+            label: "ตอนทั้งหมด",
+            value: loading
+              ? "..."
+              : stats?.totalChapters.toString() || "0",
+            icon: BookOpen,
+            color: "text-green-500",
+          },
+        ]
+      : []),
+  ];
   return (
     <div className="space-y-6">
       <div>
@@ -34,10 +104,10 @@ export default function AdminPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => (
+        {displayStats.map((stat) => (
           <div
             key={stat.label}
-            className="p-5 rounded-xl bg-card border border-border shadow-sm">
+            className="p-5 rounded-xl bg-card border border-border shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">{stat.label}</p>
@@ -54,9 +124,9 @@ export default function AdminPage() {
       </div>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <a
-          href="/admin/manga"
+          href="/writer/comics"
           className="p-6 rounded-xl bg-card border border-border shadow-sm hover:border-orange-500/30 hover:shadow-md transition-all group">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-orange-500/10 flex items-center justify-center">
@@ -68,24 +138,6 @@ export default function AdminPage() {
               </h3>
               <p className="text-sm text-muted-foreground mt-0.5">
                 เพิ่ม แก้ไข หรือลบมังงะ
-              </p>
-            </div>
-          </div>
-        </a>
-
-        <a
-          href="/admin/portfolio"
-          className="p-6 rounded-xl bg-card border border-border shadow-sm hover:border-orange-500/30 hover:shadow-md transition-all group">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center">
-              <FileText className="w-6 h-6 text-blue-500" />
-            </div>
-            <div>
-              <h3 className="font-medium text-foreground group-hover:text-blue-600 transition-colors">
-                ผลงานของฉัน
-              </h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                จัดการผลงานของคุณ
               </p>
             </div>
           </div>

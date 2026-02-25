@@ -1,21 +1,11 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
+import { allGenres } from "@/lib/config/genres";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
-    const genres = await prisma.genre.findMany({
-      orderBy: { name: "asc" },
-      include: {
-        _count: {
-          select: {
-            mangas: true,
-          },
-        },
-      },
-    });
-
-    return ok({ genres });
+    // Return genres from config file
+    return ok({ genres: allGenres });
   } catch (error) {
     return handleRouteError(error);
   }

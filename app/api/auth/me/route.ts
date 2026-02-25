@@ -15,6 +15,22 @@ export async function GET(request: NextRequest) {
       return ok({ user: null });
     }
 
+    // Refresh session expiration if it's still valid (extend by 30 days)
+    const session = await prisma.session.findUnique({
+      where: { token: sessionToken },
+    });
+
+    if (session && session.expiresAt > new Date()) {
+      // Extend session by 30 days from now
+      const newExpiresAt = new Date();
+      newExpiresAt.setDate(newExpiresAt.getDate() + 30);
+      
+      await prisma.session.update({
+        where: { token: sessionToken },
+        data: { expiresAt: newExpiresAt },
+      });
+    }
+
     // Get full user info
     const fullUser = await prisma.user.findUnique({
       where: { id: user.id },

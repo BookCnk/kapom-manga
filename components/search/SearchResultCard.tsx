@@ -57,7 +57,8 @@ export default function SearchResultCard({ item }: Props) {
   const [hasImageError, setHasImageError] = useState(false);
 
   const handleCardClick = () => {
-    router.push(`/content/${item.slug}`);
+    // ใช้ path /comic แทน /content
+    router.push(`/comic/${item.slug}`);
   };
 
   const handleCreatorClick = (e: React.MouseEvent) => {

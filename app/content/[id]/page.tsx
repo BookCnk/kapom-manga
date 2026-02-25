@@ -16,14 +16,16 @@ const FALLBACK_COVER =
 
 export default function ContentPage({ params }: { params: { id: string } }) {
   const content = contentData[params.id];
+
+  // ถ้าไม่พบ content ให้ไปหน้า 404 ก่อนจะอ่าน episodes กัน error `Cannot read properties of undefined (reading 'episodes')`
+  if (!content) {
+    notFound();
+  }
+
   const episodes = content.episodes;
   const lastEpisode = episodes[episodes.length - 1];
   const lastUpdatedText = lastEpisode?.date;
   const coverSrc = content.coverImage || FALLBACK_COVER;
-
-  if (!content) {
-    notFound();
-  }
 
   return (
     <>
