@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
 import { ensureCanManageManga } from "@/lib/api/permissions";
-import { CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
+import { CoinTransactionType, CoinTransactionStatus } from "@prisma/client";
 
 type Params = {
   params: {
@@ -93,4 +93,3 @@ export async function GET(request: NextRequest, { params }: Params) {
     return handleRouteError(error);
   }
 }
-

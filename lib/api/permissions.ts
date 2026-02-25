@@ -1,4 +1,4 @@
-import { UserRole } from "@/generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { HttpError } from "@/lib/api/http";
 
@@ -60,4 +60,3 @@ export async function ensureCanManagePage(actor: Actor, pageId: number) {
   }
   return page;
 }
-

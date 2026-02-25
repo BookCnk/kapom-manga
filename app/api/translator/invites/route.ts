@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { UserRole } from "@/generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireRole } from "@/lib/api/auth";
@@ -15,7 +15,10 @@ const createInviteSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const inviter = await requireRole(request, [UserRole.TRANSLATOR, UserRole.ADMIN]);
+    const inviter = await requireRole(request, [
+      UserRole.TRANSLATOR,
+      UserRole.ADMIN,
+    ]);
     const body = createInviteSchema.parse(await request.json());
 
     const expiresAt = new Date();
@@ -49,5 +52,3 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error);
   }
 }
-
-

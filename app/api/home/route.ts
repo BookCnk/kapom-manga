@@ -2,7 +2,11 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
-import { Visibility, CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
+import {
+  Visibility,
+  CoinTransactionType,
+  CoinTransactionStatus,
+} from "@prisma/client";
 import { getGenreBySlug } from "@/lib/config/genres";
 
 // Helper function to calculate sales for a manga
@@ -116,11 +120,13 @@ async function getWeeklyViewsCount(mangaId: number): Promise<number> {
 // Transform manga to MangaCard format
 function transformManga(manga: any, sales: number = 0) {
   // Map genreSlugs JSON field to main/sub genre names via config
-  const slugs: string[] = Array.isArray(manga.genreSlugs) ? manga.genreSlugs : [];
-  
+  const slugs: string[] = Array.isArray(manga.genreSlugs)
+    ? manga.genreSlugs
+    : [];
+
   let mainGenreName: string | undefined;
   let subGenreName: string | undefined;
-  
+
   for (const slug of slugs) {
     const genre = getGenreBySlug(slug);
     if (!genre) continue;
@@ -130,7 +136,7 @@ function transformManga(manga: any, sales: number = 0) {
       subGenreName = genre.name;
     }
   }
-  
+
   const genreName = subGenreName || mainGenreName || "ทั่วไป";
 
   const latestChapter = manga.chapters?.[0] || null;
@@ -158,8 +164,10 @@ function transformManga(manga: any, sales: number = 0) {
 
   // Format updatedAt as ISO string
   const updatedAtValue = latestChapter?.updatedAt || manga.updatedAt;
-  const updatedAtString = updatedAtValue 
-    ? (updatedAtValue instanceof Date ? updatedAtValue.toISOString() : String(updatedAtValue))
+  const updatedAtString = updatedAtValue
+    ? updatedAtValue instanceof Date
+      ? updatedAtValue.toISOString()
+      : String(updatedAtValue)
     : new Date().toISOString();
 
   return {
@@ -203,127 +211,133 @@ export async function GET(_request: NextRequest) {
     console.log("Starting to fetch home data...");
 
     // Featured: Latest mangas (limit 5)
-    const featuredMangas = await prisma.manga.findMany({
-      where,
-      take: 5,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        description: true,
-        coverUrl: true,
-        views: true,
-        updatedAt: true,
-        createdAt: true,
-        genreSlugs: true,
-        creator: { select: { id: true, name: true, email: true } },
-        chapters: {
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            number: true,
-            updatedAt: true,
+    const featuredMangas = await prisma.manga
+      .findMany({
+        where,
+        take: 5,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          coverUrl: true,
+          views: true,
+          updatedAt: true,
+          createdAt: true,
+          genreSlugs: true,
+          creator: { select: { id: true, name: true, email: true } },
+          chapters: {
+            take: 1,
+            orderBy: { updatedAt: "desc" },
+            select: {
+              id: true,
+              number: true,
+              updatedAt: true,
+            },
+          },
+          _count: {
+            select: {
+              chapters: true,
+              bookmarks: true,
+              likes: true,
+              comments: true,
+            },
           },
         },
-        _count: {
-          select: {
-            chapters: true,
-            bookmarks: true,
-            likes: true,
-            comments: true,
-          },
-        },
-      },
-    }).catch((err) => {
-      console.error("Error fetching featured mangas:", err);
-      return [];
-    });
+      })
+      .catch((err) => {
+        console.error("Error fetching featured mangas:", err);
+        return [];
+      });
 
     // Latest Updates: Mangas with recently updated chapters (limit 12)
-    const latestUpdatesMangas = await prisma.manga.findMany({
-      where,
-      take: 20,
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        description: true,
-        coverUrl: true,
-        views: true,
-        updatedAt: true,
-        createdAt: true,
-        genreSlugs: true,
-        creator: { select: { id: true, name: true, email: true } },
-        chapters: {
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            number: true,
-            updatedAt: true,
+    const latestUpdatesMangas = await prisma.manga
+      .findMany({
+        where,
+        take: 20,
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          coverUrl: true,
+          views: true,
+          updatedAt: true,
+          createdAt: true,
+          genreSlugs: true,
+          creator: { select: { id: true, name: true, email: true } },
+          chapters: {
+            take: 1,
+            orderBy: { updatedAt: "desc" },
+            select: {
+              id: true,
+              number: true,
+              updatedAt: true,
+            },
+          },
+          _count: {
+            select: {
+              chapters: true,
+              bookmarks: true,
+              likes: true,
+              comments: true,
+            },
           },
         },
-        _count: {
-          select: {
-            chapters: true,
-            bookmarks: true,
-            likes: true,
-            comments: true,
-          },
-        },
-      },
-    }).catch((err) => {
-      console.error("Error fetching latest updates mangas:", err);
-      return [];
-    });
+      })
+      .catch((err) => {
+        console.error("Error fetching latest updates mangas:", err);
+        return [];
+      });
 
     // Weekly Ranking: Get ALL public mangas and calculate weekly views
     // Then sort by weekly views and take top 10
-    const allMangasForRanking = await prisma.manga.findMany({
-      where,
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        description: true,
-        coverUrl: true,
-        views: true,
-        updatedAt: true,
-        createdAt: true,
-        genreSlugs: true,
-        creator: { select: { id: true, name: true, email: true } },
-        chapters: {
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            number: true,
-            updatedAt: true,
+    const allMangasForRanking = await prisma.manga
+      .findMany({
+        where,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          coverUrl: true,
+          views: true,
+          updatedAt: true,
+          createdAt: true,
+          genreSlugs: true,
+          creator: { select: { id: true, name: true, email: true } },
+          chapters: {
+            take: 1,
+            orderBy: { updatedAt: "desc" },
+            select: {
+              id: true,
+              number: true,
+              updatedAt: true,
+            },
+          },
+          _count: {
+            select: {
+              chapters: true,
+              bookmarks: true,
+              likes: true,
+              comments: true,
+            },
           },
         },
-        _count: {
-          select: {
-            chapters: true,
-            bookmarks: true,
-            likes: true,
-            comments: true,
-          },
-        },
-      },
-    }).catch((err) => {
-      console.error("Error fetching mangas for ranking:", err);
-      return [];
-    });
+      })
+      .catch((err) => {
+        console.error("Error fetching mangas for ranking:", err);
+        return [];
+      });
 
     // Calculate weekly views for all mangas and sort
     const mangasWithWeeklyViews = await Promise.all(
       allMangasForRanking.map(async (manga) => {
         const weeklyViews = await getWeeklyViewsCount(manga.id);
         return { manga, weeklyViews };
-      })
+      }),
     );
 
     const weeklyRankingMangas = mangasWithWeeklyViews
@@ -333,48 +347,50 @@ export async function GET(_request: NextRequest) {
 
     // Best Sellers: Top mangas by weekly sales (limit 5)
     // Get ALL public mangas to calculate weekly sales
-    const allMangasForSales = await prisma.manga.findMany({
-      where,
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        description: true,
-        coverUrl: true,
-        views: true,
-        updatedAt: true,
-        createdAt: true,
-        genreSlugs: true,
-        creator: { select: { id: true, name: true, email: true } },
-        chapters: {
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            number: true,
-            updatedAt: true,
+    const allMangasForSales = await prisma.manga
+      .findMany({
+        where,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          coverUrl: true,
+          views: true,
+          updatedAt: true,
+          createdAt: true,
+          genreSlugs: true,
+          creator: { select: { id: true, name: true, email: true } },
+          chapters: {
+            take: 1,
+            orderBy: { updatedAt: "desc" },
+            select: {
+              id: true,
+              number: true,
+              updatedAt: true,
+            },
+          },
+          _count: {
+            select: {
+              chapters: true,
+              bookmarks: true,
+              likes: true,
+              comments: true,
+            },
           },
         },
-        _count: {
-          select: {
-            chapters: true,
-            bookmarks: true,
-            likes: true,
-            comments: true,
-          },
-        },
-      },
-    }).catch((err) => {
-      console.error("Error fetching mangas for sales:", err);
-      return [];
-    });
+      })
+      .catch((err) => {
+        console.error("Error fetching mangas for sales:", err);
+        return [];
+      });
 
     // Calculate weekly sales for all mangas and sort
     const mangasWithWeeklySales = await Promise.all(
       allMangasForSales.map(async (manga) => {
         const weeklySales = await calculateWeeklyMangaSales(manga.id);
         return { manga, weeklySales };
-      })
+      }),
     );
 
     const bestSellersMangas = mangasWithWeeklySales
@@ -384,48 +400,50 @@ export async function GET(_request: NextRequest) {
 
     // Most Liked: Top mangas by weekly likes (limit 5)
     // Get ALL public mangas to calculate weekly likes
-    const allMangasForLikes = await prisma.manga.findMany({
-      where,
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        description: true,
-        coverUrl: true,
-        views: true,
-        updatedAt: true,
-        createdAt: true,
-        genreSlugs: true,
-        creator: { select: { id: true, name: true, email: true } },
-        chapters: {
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            number: true,
-            updatedAt: true,
+    const allMangasForLikes = await prisma.manga
+      .findMany({
+        where,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          coverUrl: true,
+          views: true,
+          updatedAt: true,
+          createdAt: true,
+          genreSlugs: true,
+          creator: { select: { id: true, name: true, email: true } },
+          chapters: {
+            take: 1,
+            orderBy: { updatedAt: "desc" },
+            select: {
+              id: true,
+              number: true,
+              updatedAt: true,
+            },
+          },
+          _count: {
+            select: {
+              chapters: true,
+              bookmarks: true,
+              likes: true,
+              comments: true,
+            },
           },
         },
-        _count: {
-          select: {
-            chapters: true,
-            bookmarks: true,
-            likes: true,
-            comments: true,
-          },
-        },
-      },
-    }).catch((err) => {
-      console.error("Error fetching mangas for likes:", err);
-      return [];
-    });
+      })
+      .catch((err) => {
+        console.error("Error fetching mangas for likes:", err);
+        return [];
+      });
 
     // Calculate weekly likes for all mangas and sort
     const mangasWithWeeklyLikes = await Promise.all(
       allMangasForLikes.map(async (manga) => {
         const weeklyLikes = await getWeeklyLikesCount(manga.id);
         return { manga, weeklyLikes };
-      })
+      }),
     );
 
     const mostLikedMangas = mangasWithWeeklyLikes
@@ -434,47 +452,47 @@ export async function GET(_request: NextRequest) {
       .map((item) => item.manga);
 
     // Get all public mangas as fallback
-    const allPublicMangas = await prisma.manga.findMany({
-      where,
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        description: true,
-        coverUrl: true,
-        views: true,
-        updatedAt: true,
-        createdAt: true,
-        genreSlugs: true,
-        creator: { select: { id: true, name: true, email: true } },
-        chapters: {
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            number: true,
-            updatedAt: true,
+    const allPublicMangas = await prisma.manga
+      .findMany({
+        where,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          coverUrl: true,
+          views: true,
+          updatedAt: true,
+          createdAt: true,
+          genreSlugs: true,
+          creator: { select: { id: true, name: true, email: true } },
+          chapters: {
+            take: 1,
+            orderBy: { updatedAt: "desc" },
+            select: {
+              id: true,
+              number: true,
+              updatedAt: true,
+            },
+          },
+          _count: {
+            select: {
+              chapters: true,
+              bookmarks: true,
+              likes: true,
+              comments: true,
+            },
           },
         },
-        _count: {
-          select: {
-            chapters: true,
-            bookmarks: true,
-            likes: true,
-            comments: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }).catch((err) => {
-      console.error("Error fetching all public mangas:", err);
-      return [];
-    });
+        orderBy: { createdAt: "desc" },
+      })
+      .catch((err) => {
+        console.error("Error fetching all public mangas:", err);
+        return [];
+      });
 
     // Transform all mangas with error handling
-    const featured = await Promise.all(
-      featuredMangas.map(safeTransformManga)
-    );
+    const featured = await Promise.all(featuredMangas.map(safeTransformManga));
 
     // Fill featured if less than 5
     if (featured.length < 5) {
@@ -484,13 +502,13 @@ export async function GET(_request: NextRequest) {
         .filter((m) => !featuredIds.has(`m-${m.id}`))
         .slice(0, needed);
       const additionalTransformed = await Promise.all(
-        additional.map(safeTransformManga)
+        additional.map(safeTransformManga),
       );
       featured.push(...additionalTransformed);
     }
 
     const latestUpdates = await Promise.all(
-      latestUpdatesMangas.slice(0, 12).map(safeTransformManga)
+      latestUpdatesMangas.slice(0, 12).map(safeTransformManga),
     );
 
     // Fill latestUpdates if less than 12
@@ -501,13 +519,13 @@ export async function GET(_request: NextRequest) {
         .filter((m) => !latestIds.has(`m-${m.id}`))
         .slice(0, needed);
       const additionalTransformed = await Promise.all(
-        additional.map(safeTransformManga)
+        additional.map(safeTransformManga),
       );
       latestUpdates.push(...additionalTransformed);
     }
 
     const weeklyRanking = await Promise.all(
-      weeklyRankingMangas.map(safeTransformManga)
+      weeklyRankingMangas.map(safeTransformManga),
     );
 
     // Fill weeklyRanking if less than 10
@@ -518,13 +536,13 @@ export async function GET(_request: NextRequest) {
         .filter((m) => !rankingIds.has(`m-${m.id}`))
         .slice(0, needed);
       const additionalTransformed = await Promise.all(
-        additional.map(safeTransformManga)
+        additional.map(safeTransformManga),
       );
       weeklyRanking.push(...additionalTransformed);
     }
 
     const bestSellers = await Promise.all(
-      bestSellersMangas.map(safeTransformManga)
+      bestSellersMangas.map(safeTransformManga),
     );
 
     // Fill bestSellers if less than 5
@@ -535,13 +553,13 @@ export async function GET(_request: NextRequest) {
         .filter((m) => !sellerIds.has(`m-${m.id}`))
         .slice(0, needed);
       const additionalTransformed = await Promise.all(
-        additional.map(safeTransformManga)
+        additional.map(safeTransformManga),
       );
       bestSellers.push(...additionalTransformed);
     }
 
     const mostLiked = await Promise.all(
-      mostLikedMangas.map(safeTransformManga)
+      mostLikedMangas.map(safeTransformManga),
     );
 
     // Fill mostLiked if less than 5
@@ -552,7 +570,7 @@ export async function GET(_request: NextRequest) {
         .filter((m) => !likedIds.has(`m-${m.id}`))
         .slice(0, needed);
       const additionalTransformed = await Promise.all(
-        additional.map(safeTransformManga)
+        additional.map(safeTransformManga),
       );
       mostLiked.push(...additionalTransformed);
     }
@@ -571,4 +589,3 @@ export async function GET(_request: NextRequest) {
     return handleRouteError(error);
   }
 }
-

@@ -6,7 +6,7 @@ import {
   CoinTransactionType,
   TopupOrderStatus,
   UserRole,
-} from "@/generated/prisma/enums";
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api/auth";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
@@ -111,5 +111,3 @@ export async function POST(request: NextRequest, { params }: Params) {
     return handleRouteError(error);
   }
 }
-
-

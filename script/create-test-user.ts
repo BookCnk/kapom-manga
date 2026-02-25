@@ -1,6 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { hashPassword } from "../lib/auth/password";
-import { UserRole } from "../generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 
 async function createTestUser() {
   try {
@@ -16,7 +16,7 @@ async function createTestUser() {
 
     // Create test user
     const passwordHash = hashPassword("testtest");
-    
+
     const user = await prisma.user.create({
       data: {
         email: "kapom@o.com",

@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { UserRole } from "@/generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { HttpError } from "@/lib/api/http";
 

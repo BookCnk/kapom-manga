@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
-import { CoinTransactionStatus } from "@/generated/prisma/enums";
+import { CoinTransactionStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/api/auth";
 import { handleRouteError, ok } from "@/lib/api/http";
@@ -41,5 +41,3 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error);
   }
 }
-
-

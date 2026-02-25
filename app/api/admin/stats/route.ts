@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireRole } from "@/lib/api/auth";
-import { UserRole } from "@/generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {

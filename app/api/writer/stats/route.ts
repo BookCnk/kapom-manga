@@ -3,12 +3,19 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireRole } from "@/lib/api/auth";
-import { UserRole, CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
+import {
+  UserRole,
+  CoinTransactionType,
+  CoinTransactionStatus,
+} from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
     // Require translator or admin role
-    const user = await requireRole(request, [UserRole.TRANSLATOR, UserRole.ADMIN]);
+    const user = await requireRole(request, [
+      UserRole.TRANSLATOR,
+      UserRole.ADMIN,
+    ]);
 
     // Get manga statistics for this user
     const mangaStats = await prisma.manga.aggregate({
@@ -81,7 +88,10 @@ export async function GET(request: NextRequest) {
       return typeof chapterId === "number" && chapterIds.includes(chapterId);
     });
 
-    const totalSales = relevantPurchases.reduce((sum, tx) => sum + tx.amount, 0);
+    const totalSales = relevantPurchases.reduce(
+      (sum, tx) => sum + tx.amount,
+      0,
+    );
 
     // Novel stats (placeholder - 0 for now)
     const novelStats = {
@@ -110,4 +120,3 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error);
   }
 }
-

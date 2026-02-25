@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { User, BookOpen, Heart, Settings } from "lucide-react";
 import Link from "next/link";
-import { UserRole } from "@/generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 
 export default function ProfilePage() {
   const { user } = useAuth();
@@ -52,22 +52,28 @@ export default function ProfilePage() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-medium text-foreground">โปรไฟล์ของฉัน</h1>
-          <p className="text-muted-foreground mt-2">จัดการข้อมูลส่วนตัวและการตั้งค่า</p>
+          <h1 className="text-3xl font-medium text-foreground">
+            โปรไฟล์ของฉัน
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            จัดการข้อมูลส่วนตัวและการตั้งค่า
+          </p>
         </div>
 
         {/* Profile Card */}
         <div className="bg-card rounded-2xl border border-border shadow-sm p-8 mb-6">
           <div className="flex items-center gap-6 mb-6">
             <div className="w-20 h-20 rounded-full bg-orange-500 flex items-center justify-center text-white text-2xl font-medium">
-              {user.name?.charAt(0)?.toUpperCase() || user.email.charAt(0).toUpperCase()}
+              {user.name?.charAt(0)?.toUpperCase() ||
+                user.email.charAt(0).toUpperCase()}
             </div>
             <div>
               <h2 className="text-xl font-medium text-foreground">
                 {user.name || "ไม่ระบุชื่อ"}
               </h2>
               <p className="text-muted-foreground">{user.email}</p>
-              <span className={`inline-block mt-2 px-3 py-1 text-sm font-medium rounded-full ${getRoleColor(user.role)}`}>
+              <span
+                className={`inline-block mt-2 px-3 py-1 text-sm font-medium rounded-full ${getRoleColor(user.role)}`}>
                 {getRoleLabel(user.role)}
               </span>
             </div>
@@ -76,7 +82,9 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="text-center p-4 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-foreground">0</div>
-              <div className="text-sm text-muted-foreground">มังงะที่บุ๊คมาร์ค</div>
+              <div className="text-sm text-muted-foreground">
+                มังงะที่บุ๊คมาร์ค
+              </div>
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-foreground">0</div>
@@ -84,14 +92,17 @@ export default function ProfilePage() {
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-foreground">0</div>
-              <div className="text-sm text-muted-foreground">ตอนที่อ่านแล้ว</div>
+              <div className="text-sm text-muted-foreground">
+                ตอนที่อ่านแล้ว
+              </div>
             </div>
           </div>
         </div>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(user.role === UserRole.TRANSLATOR || user.role === UserRole.ADMIN) && (
+          {(user.role === UserRole.TRANSLATOR ||
+            user.role === UserRole.ADMIN) && (
             <Link
               href="/admin"
               className="p-6 bg-card rounded-xl border border-border shadow-sm hover:border-orange-500/30 hover:shadow-md transition-all group">

@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { UserRole } from "@/generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 
 type User = {
   id: number;
@@ -83,8 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       console.log("Login response:", data);
-      
-      if (response.ok && data.success && data.data?.session && data.data?.user) {
+
+      if (
+        response.ok &&
+        data.success &&
+        data.data?.session &&
+        data.data?.user
+      ) {
         localStorage.setItem("session_token", data.data.session.token);
         setUser(data.data.user);
         return { success: true };

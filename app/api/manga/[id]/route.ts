@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { MangaStatus, Visibility } from "@/generated/prisma/enums";
+import { MangaStatus, Visibility } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
@@ -175,4 +175,3 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     return handleRouteError(error);
   }
 }
-

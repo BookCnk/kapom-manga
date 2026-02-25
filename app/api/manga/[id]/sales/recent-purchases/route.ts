@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
 import { ensureCanManageManga } from "@/lib/api/permissions";
-import { CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
+import { CoinTransactionType, CoinTransactionStatus } from "@prisma/client";
 
 type Params = {
   params: {
@@ -63,26 +63,27 @@ export async function GET(request: NextRequest, { params }: Params) {
     });
 
     // Map to chapter info
-    const recentPurchases = relevantPurchases.map((tx) => {
-      if (!tx.metadata || typeof tx.metadata !== "object") return null;
-      const metadata = tx.metadata as Record<string, unknown>;
-      const chapterId = metadata.chapterId;
-      if (typeof chapterId !== "number") return null;
+    const recentPurchases = relevantPurchases
+      .map((tx) => {
+        if (!tx.metadata || typeof tx.metadata !== "object") return null;
+        const metadata = tx.metadata as Record<string, unknown>;
+        const chapterId = metadata.chapterId;
+        if (typeof chapterId !== "number") return null;
 
-      const chapter = chapters.find((ch) => ch.id === chapterId);
-      if (!chapter) return null;
+        const chapter = chapters.find((ch) => ch.id === chapterId);
+        if (!chapter) return null;
 
-      return {
-        purchaseDate: tx.createdAt,
-        chapterNumber: chapter.number,
-        title: chapter.title || `ตอนที่ ${chapter.number}`,
-        price: tx.amount,
-      };
-    }).filter((p) => p !== null);
+        return {
+          purchaseDate: tx.createdAt,
+          chapterNumber: chapter.number,
+          title: chapter.title || `ตอนที่ ${chapter.number}`,
+          price: tx.amount,
+        };
+      })
+      .filter((p) => p !== null);
 
     return ok({ recentPurchases });
   } catch (error) {
     return handleRouteError(error);
   }
 }
-

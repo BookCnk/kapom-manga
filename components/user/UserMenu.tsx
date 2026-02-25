@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { User, LogOut, Settings, BookOpen, Shield } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { UserRole } from "@/generated/prisma/enums";
+import { UserRole } from "@prisma/client";
 
 export default function UserMenu() {
   const { user, logout, loading } = useAuth();
@@ -90,7 +90,8 @@ export default function UserMenu() {
           />
         ) : (
           <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white text-sm font-medium">
-            {user.name?.charAt(0)?.toUpperCase() || user.email.charAt(0).toUpperCase()}
+            {user.name?.charAt(0)?.toUpperCase() ||
+              user.email.charAt(0).toUpperCase()}
           </div>
         )}
       </button>
@@ -101,9 +102,7 @@ export default function UserMenu() {
             <div className="text-sm font-medium text-foreground">
               {user.name || user.email}
             </div>
-            <div className="text-xs text-muted-foreground">
-              {user.email}
-            </div>
+            <div className="text-xs text-muted-foreground">{user.email}</div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
               {getRoleIcon(user.role)}
               {getRoleLabel(user.role)}
@@ -119,7 +118,8 @@ export default function UserMenu() {
               โปรไฟล์ของฉัน
             </Link>
 
-            {(user.role === UserRole.TRANSLATOR || user.role === UserRole.ADMIN) && (
+            {(user.role === UserRole.TRANSLATOR ||
+              user.role === UserRole.ADMIN) && (
               <Link
                 href="/admin"
                 className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"

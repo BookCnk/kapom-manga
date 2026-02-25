@@ -3,12 +3,19 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireRole } from "@/lib/api/auth";
-import { UserRole, CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
+import {
+  UserRole,
+  CoinTransactionType,
+  CoinTransactionStatus,
+} from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
     // Require translator or admin role
-    const user = await requireRole(request, [UserRole.TRANSLATOR, UserRole.ADMIN]);
+    const user = await requireRole(request, [
+      UserRole.TRANSLATOR,
+      UserRole.ADMIN,
+    ]);
 
     // Get or create wallet
     let wallet = await prisma.wallet.findUnique({
@@ -73,7 +80,10 @@ export async function GET(request: NextRequest) {
     });
 
     // Calculate total sales
-    const totalSales = salesTransactions.reduce((sum, tx) => sum + tx.amount, 0);
+    const totalSales = salesTransactions.reduce(
+      (sum, tx) => sum + tx.amount,
+      0,
+    );
 
     // Get support transactions (assuming they're in metadata or a different type)
     // For now, we'll use a placeholder - you may need to adjust based on your business logic
@@ -130,4 +140,3 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error);
   }
 }
-

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
-import { TranslatorInviteStatus } from "@/generated/prisma/enums";
+import { TranslatorInviteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
@@ -29,7 +29,10 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     if (invite.status !== TranslatorInviteStatus.PENDING) {
-      throw new HttpError(409, `Invite is already ${invite.status.toLowerCase()}`);
+      throw new HttpError(
+        409,
+        `Invite is already ${invite.status.toLowerCase()}`,
+      );
     }
 
     if (invite.expiresAt <= new Date()) {
@@ -69,5 +72,3 @@ export async function POST(request: NextRequest, { params }: Params) {
     return handleRouteError(error);
   }
 }
-
-

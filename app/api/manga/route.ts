@@ -7,7 +7,7 @@ import {
   Visibility,
   CoinTransactionType,
   CoinTransactionStatus,
-} from "@/generated/prisma/enums";
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
@@ -317,4 +317,3 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error);
   }
 }
-

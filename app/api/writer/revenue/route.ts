@@ -3,16 +3,27 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireRole } from "@/lib/api/auth";
-import { UserRole, CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
+import {
+  UserRole,
+  CoinTransactionType,
+  CoinTransactionStatus,
+} from "@prisma/client";
 
 export async function GET(request: NextRequest) {
   try {
     // Require translator or admin role
-    const user = await requireRole(request, [UserRole.TRANSLATOR, UserRole.ADMIN]);
+    const user = await requireRole(request, [
+      UserRole.TRANSLATOR,
+      UserRole.ADMIN,
+    ]);
 
     const { searchParams } = new URL(request.url);
-    const month = parseInt(searchParams.get("month") || (new Date().getMonth() + 1).toString());
-    const year = parseInt(searchParams.get("year") || new Date().getFullYear().toString());
+    const month = parseInt(
+      searchParams.get("month") || (new Date().getMonth() + 1).toString(),
+    );
+    const year = parseInt(
+      searchParams.get("year") || new Date().getFullYear().toString(),
+    );
 
     // Get start and end date for the month
     const startDate = new Date(year, month - 1, 1);
@@ -120,4 +131,3 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error);
   }
 }
-
