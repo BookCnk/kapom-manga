@@ -97,4 +97,4 @@ services:
 volumes:
   pgdata:
   pgadmin:
-  minio_data: # 🌟 เพิ่ม Volume สำหรับเก็บข้อมูลรูปภาพถาวร ไม่ให้หายตอนปิด Docker
+  minio_data: 
