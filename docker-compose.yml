@@ -30,6 +30,40 @@ services:
     volumes:
       - pgadmin:/var/lib/pgadmin
 
+  # 🌟 เพิ่ม Service MinIO (ตัวเซิร์ฟเวอร์เก็บไฟล์)
+  minio:
+    image: minio/minio:latest
+    container_name: app-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-admin12345678}
+    ports:
+      - "9000:9000" # พอร์ตสำหรับ API (S3 Endpoint ที่โค้ด Next.js ใช้คุย)
+      - "9001:9001" # พอร์ตสำหรับหน้าเว็บ Console UI (ให้คุณเข้าไปดูรูปผ่านบราวเซอร์)
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 🌟 เพิ่ม Service MinIO Init (รันครั้งเดียวเพื่อสร้าง Bucket 'manga-images' ให้เป็น Public)
+  minio-init:
+    image: minio/mc:latest
+    container_name: app-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_USER:-admin} ${MINIO_PASSWORD:-admin12345678};
+      /usr/bin/mc mb myminio/manga-images --ignore-existing;
+      /usr/bin/mc anonymous set download myminio/manga-images;
+      exit 0;
+      "
+
   web:
     build:
       context: .
@@ -38,13 +72,21 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://${POSTGRES_USER:-avnadmin}:${POSTGRES_PASSWORD:-avnadmin_password}@postgres:5432/${POSTGRES_DB:-manga}?schema=public
-      # กัน chokidar ไม่เห็นไฟล์เปลี่ยนในบางเครื่อง/VM
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
+      # 🌟 เพิ่ม Environment สำหรับให้ Next.js คุยกับ MinIO ได้
+      S3_ENDPOINT: minio # อ้างอิงชื่อ service ใน Docker Compose ได้เลย
+      S3_PORT: "9000"
+      S3_USE_SSL: "false"
+      S3_ACCESS_KEY: ${MINIO_USER:-admin}
+      S3_SECRET_KEY: ${MINIO_PASSWORD:-admin12345678}
+      S3_BUCKET_NAME: manga-images
     ports:
       - "3000:3000"
     depends_on:
       postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - .:/app
@@ -55,3 +97,4 @@ services:
 volumes:
   pgdata:
   pgadmin:
+  minio_data: # 🌟 เพิ่ม Volume สำหรับเก็บข้อมูลรูปภาพถาวร ไม่ให้หายตอนปิด Docker
