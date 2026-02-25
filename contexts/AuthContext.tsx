@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { UserRole } from "@prisma/client";
+import type { UserRole } from "@/lib/types/client-enums";
 
 type User = {
   id: number;

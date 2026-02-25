@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { BarChart3, Users, FileText, BookOpen, DollarSign } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { UserRole } from "@prisma/client";
+import { UserRole } from "@/lib/types/client-enums";
 type Stats = {
   totalMangas: number;
   totalUsers: number;

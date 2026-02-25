@@ -16,7 +16,7 @@ import {
   FileText,
   ExternalLink,
 } from "lucide-react";
-import { MangaStatus, Visibility } from "@prisma/client";
+import { MangaStatus, Visibility } from "@/lib/types/client-enums";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

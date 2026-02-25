@@ -11,7 +11,7 @@ import {
   Plus,
 } from "lucide-react";
 import Link from "next/link";
-import { MangaStatus, Visibility } from "@prisma/client";
+import { MangaStatus, Visibility } from "@/lib/types/client-enums";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import AuthGuard from "@/components/writer/AuthGuard";

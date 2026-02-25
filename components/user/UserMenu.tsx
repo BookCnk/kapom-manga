@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { User, LogOut, Settings, BookOpen, Shield } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { UserRole } from "@prisma/client";
+import { UserRole } from "@/lib/types/client-enums";
 
 export default function UserMenu() {
   const { user, logout, loading } = useAuth();

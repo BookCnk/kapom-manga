@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { User, BookOpen, Heart, Settings } from "lucide-react";
 import Link from "next/link";
-import { UserRole } from "@prisma/client";
+import { UserRole } from "@/lib/types/client-enums";
 
 export default function ProfilePage() {
   const { user } = useAuth();
