@@ -81,6 +81,7 @@ services:
       S3_ACCESS_KEY: ${MINIO_USER:-admin}
       S3_SECRET_KEY: ${MINIO_PASSWORD:-admin12345678}
       S3_BUCKET_NAME: manga-images
+      S3_PUBLIC_BASE_URL: http://localhost:9000
     ports:
       - "3000:3000"
     depends_on:

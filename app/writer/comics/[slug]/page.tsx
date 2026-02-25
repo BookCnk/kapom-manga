@@ -448,7 +448,7 @@ export default function EditMangaPage() {
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       toast.error("ขนาดไฟล์ต้องไม่เกิน 2MB");
       return;
     }

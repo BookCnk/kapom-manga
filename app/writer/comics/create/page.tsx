@@ -85,6 +85,7 @@ export default function CreateMangaPage() {
   const [tagInput, setTagInput] = useState("");
   const [nsfwModel, setNsfwModel] = useState<any>(null);
   const [checkingNsfw, setCheckingNsfw] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   const [formData, setFormData] = useState<{
     title: string;
@@ -202,6 +203,36 @@ export default function CreateMangaPage() {
     }
   };
 
+  const uploadCoverToMinio = async (file: File): Promise<string> => {
+    const sessionToken =
+      localStorage.getItem("session_token") ||
+      localStorage.getItem("sessionToken") ||
+      "";
+
+    if (!sessionToken) {
+      throw new Error("กรุณาเข้าสู่ระบบก่อนอัปโหลด");
+    }
+
+    const form = new FormData();
+    form.append("file", file);
+    form.append("folder", "covers");
+
+    const response = await fetch("/api/uploads/image", {
+      method: "POST",
+      headers: {
+        "x-session-token": sessionToken,
+      },
+      body: form,
+    });
+
+    const json = await response.json();
+    if (!response.ok || !json?.success || !json?.data?.url) {
+      throw new Error(json?.error || "Upload failed");
+    }
+
+    return json.data.url as string;
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -213,7 +244,7 @@ export default function CreateMangaPage() {
       }
 
       // Validate file size (2MB)
-      if (file.size > 2 * 1024 * 1024) {
+      if (file.size > 10 * 1024 * 1024) {
         toast.error("ขนาดไฟล์ต้องไม่เกิน 2MB");
         return;
       }
@@ -410,6 +441,17 @@ export default function CreateMangaPage() {
         return;
       }
 
+      let finalCoverUrl = formData.coverUrl;
+      const selectedCover = fileInputRef.current?.files?.[0];
+      if (selectedCover) {
+        setUploadingCover(true);
+        try {
+          finalCoverUrl = await uploadCoverToMinio(selectedCover);
+        } finally {
+          setUploadingCover(false);
+        }
+      }
+
       const response = await fetch("/api/manga", {
         method: "POST",
         headers: {
@@ -421,7 +463,7 @@ export default function CreateMangaPage() {
           slug: formData.slug,
           originalTitle: formData.originalTitle || undefined,
           description: formData.description,
-          coverUrl: formData.coverUrl || undefined,
+          coverUrl: finalCoverUrl || undefined,
           bannerUrl: formData.bannerUrl || undefined,
           status: formData.status,
           visibility: formData.visibility,
@@ -1136,9 +1178,11 @@ export default function CreateMangaPage() {
                 </Link>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || uploadingCover}
                   className="px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium">
-                  {loading ? "กำลังบันทึก..." : "เพิ่มการ์ตูนเรื่องใหม่"}
+                  {loading || uploadingCover
+                    ? "กำลังบันทึก..."
+                    : "เพิ่มการ์ตูนเรื่องใหม่"}
                 </button>
               </div>
             </div>
@@ -1148,3 +1192,4 @@ export default function CreateMangaPage() {
     </AuthGuard>
   );
 }
+
