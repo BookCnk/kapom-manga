@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { TranslatorInviteStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
@@ -68,4 +69,5 @@ export async function POST(request: NextRequest, { params }: Params) {
     return handleRouteError(error);
   }
 }
+
 

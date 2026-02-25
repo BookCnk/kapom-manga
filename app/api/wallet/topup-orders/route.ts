@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -43,4 +44,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error);
   }
 }
+
 

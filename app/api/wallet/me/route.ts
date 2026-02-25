@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { CoinTransactionStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
@@ -40,4 +41,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error);
   }
 }
+
 

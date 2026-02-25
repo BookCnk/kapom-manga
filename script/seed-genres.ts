@@ -1,6 +1,6 @@
 /**
  * Script สำหรับ seed ข้อมูล Genres (หมวดหมู่)
- * 
+ *
  * วิธีรัน:
  * npx tsx script/seed-genres.ts
  */
@@ -77,7 +77,7 @@ async function main() {
   console.log("📚 Creating main genres...");
   for (const name of mainGenres) {
     const slug = generateSlug(name);
-    await prisma.genre.upsert({
+    await prisma.tag.upsert({
       where: { slug },
       update: { name },
       create: {
@@ -92,7 +92,7 @@ async function main() {
   console.log("\n📖 Creating sub genres...");
   for (const name of subGenres) {
     const slug = `sub-${generateSlug(name)}`;
-    await prisma.genre.upsert({
+    await prisma.tag.upsert({
       where: { slug },
       update: { name },
       create: {

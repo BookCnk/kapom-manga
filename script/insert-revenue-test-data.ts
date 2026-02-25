@@ -1,11 +1,11 @@
 /**
  * Script สำหรับ insert ข้อมูลทดสอบ Revenue (CoinTransaction)
- * 
+ *
  * กราฟดึงข้อมูลจาก:
  * - Table: CoinTransaction
  * - Filter: type = PURCHASE, status = SUCCESS
  * - Metadata: { chapterId: number, mangaId?: number }
- * 
+ *
  * วิธีรัน:
  * npx tsx script/insert-revenue-test-data.ts
  */
@@ -25,11 +25,15 @@ async function insertRevenueTestData() {
     });
 
     if (!translator) {
-      console.error("❌ No translator user found. Please run seed script first.");
+      console.error(
+        "❌ No translator user found. Please run seed script first.",
+      );
       return;
     }
 
-    console.log(`✅ Found translator: ${translator.email} (ID: ${translator.id})`);
+    console.log(
+      `✅ Found translator: ${translator.email} (ID: ${translator.id})`,
+    );
 
     // 2. หา wallet ของ translator
     let wallet = await prisma.wallet.findUnique({
@@ -64,7 +68,9 @@ async function insertRevenueTestData() {
     });
 
     if (chapters.length === 0) {
-      console.error("❌ No chapters found. Please create manga and chapters first.");
+      console.error(
+        "❌ No chapters found. Please create manga and chapters first.",
+      );
       return;
     }
 
@@ -84,11 +90,24 @@ async function insertRevenueTestData() {
 
     // ข้อมูล mock สำหรับเดือนกุมภาพันธ์ (ตามภาพ)
     const februaryMockData = [
-      850, 1519.7, 650, 450, 0, 200, 200, 250, 150, 1100, 500, 200, 200, 300, 700, 1000, 500, 300,
-      300, 200, 300, 1250, 1150, 300, 0, 0, 0, 0,
+      850, 1519.7, 650, 450, 0, 200, 200, 250, 150, 1100, 500, 200, 200, 300,
+      700, 1000, 500, 300, 300, 200, 300, 1250, 1150, 300, 0, 0, 0, 0,
     ];
 
-    const transactions = [];
+    const transactions: Array<{
+      walletId: number;
+      userId: number;
+      type: CoinTransactionType;
+      status: CoinTransactionStatus;
+      amount: number;
+      balanceBefore: number;
+      balanceAfter: number;
+      metadata: {
+        chapterId: number;
+        mangaId: number;
+      };
+      createdAt: Date;
+    }> = [];
 
     for (const { year, month } of monthsToGenerate) {
       if (month < 0) {
@@ -127,7 +146,9 @@ async function insertRevenueTestData() {
     });
 
     if (existingCount > 0) {
-      console.log(`ℹ️  Found ${existingCount} existing transactions. Deleting...`);
+      console.log(
+        `ℹ️  Found ${existingCount} existing transactions. Deleting...`,
+      );
       await prisma.coinTransaction.deleteMany({
         where: {
           walletId: wallet.id,
@@ -146,7 +167,9 @@ async function insertRevenueTestData() {
       await prisma.coinTransaction.createMany({
         data: batch,
       });
-      console.log(`  Inserted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(transactions.length / batchSize)}`);
+      console.log(
+        `  Inserted batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(transactions.length / batchSize)}`,
+      );
     }
 
     console.log("✅ Successfully inserted all transactions!");
@@ -172,7 +195,20 @@ async function generateTransactionsForMonth(
   chapters: Array<{ id: number; mangaId: number }>,
   walletId: number,
   userId: number,
-  transactions: any[],
+  transactions: Array<{
+    walletId: number;
+    userId: number;
+    type: CoinTransactionType;
+    status: CoinTransactionStatus;
+    amount: number;
+    balanceBefore: number;
+    balanceAfter: number;
+    metadata: {
+      chapterId: number;
+      mangaId: number;
+    };
+    createdAt: Date;
+  }>,
   mockData?: number[],
 ) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -208,10 +244,12 @@ async function generateTransactionsForMonth(
     // แบ่ง dailyTotal เป็นหลาย transactions
     if (dailyTotal > 0) {
       const numTransactions = Math.floor(Math.random() * 5) + 1; // 1-5 transactions per day
-      const amountPerTransaction = Math.floor((dailyTotal / numTransactions) * 100) / 100;
+      const amountPerTransaction =
+        Math.floor((dailyTotal / numTransactions) * 100) / 100;
 
       for (let i = 0; i < numTransactions; i++) {
-        const randomChapter = chapters[Math.floor(Math.random() * chapters.length)];
+        const randomChapter =
+          chapters[Math.floor(Math.random() * chapters.length)];
         const hour = Math.floor(Math.random() * 24);
         const minute = Math.floor(Math.random() * 60);
         const createdAt = new Date(year, month, day, hour, minute);
@@ -236,8 +274,7 @@ async function generateTransactionsForMonth(
 }
 
 // Run the script
-insertRevenueTestData()
-  .catch((e) => {
-    console.error("❌ Script failed:", e);
-    process.exit(1);
-  });
+insertRevenueTestData().catch((e) => {
+  console.error("❌ Script failed:", e);
+  process.exit(1);
+});

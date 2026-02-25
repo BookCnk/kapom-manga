@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { MangaStatus, Visibility } from "@/generated/prisma/enums";
@@ -88,14 +89,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
           throw new HttpError(400, `Invalid genre slug: ${slug}`);
         }
       }
-      mangaData.genreSlugs = slugs;
+      (mangaData as any).genreSlugs = slugs;
     }
 
     // Update manga with genres and tags in a transaction
     const manga = await prisma.$transaction(async (tx) => {
       // Update manga basic info
       const updatedManga = await tx.manga.update({
-      where: { id: mangaId },
+        where: { id: mangaId },
         data: mangaData,
       });
 
@@ -110,8 +111,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         if (Array.isArray(tags) && tags.length > 0) {
           try {
             const tagPromises = tags.map(async (tagName: string) => {
-              const tagSlug = tagName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-              
+              const tagSlug = tagName
+                .toLowerCase()
+                .replace(/\s+/g, "-")
+                .replace(/[^a-z0-9-]/g, "");
+
               if (!tagSlug) {
                 return null;
               }
@@ -128,7 +132,9 @@ export async function PATCH(request: NextRequest, { params }: Params) {
               return tag.id;
             });
 
-            const tagIds = (await Promise.all(tagPromises)).filter(id => id !== null);
+            const tagIds = (await Promise.all(tagPromises)).filter(
+              (id) => id !== null,
+            );
 
             if (tagIds.length > 0) {
               await (tx as any).mangaTag.createMany({

@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -88,4 +89,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error);
   }
 }
+
 

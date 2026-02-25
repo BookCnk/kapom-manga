@@ -1,6 +1,13 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { MangaStatus, UserRole, Visibility, CoinTransactionType, CoinTransactionStatus } from "@/generated/prisma/enums";
+import {
+  MangaStatus,
+  UserRole,
+  Visibility,
+  CoinTransactionType,
+  CoinTransactionStatus,
+} from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
@@ -33,12 +40,19 @@ export async function GET(request: NextRequest) {
     const visibility = searchParams.get("visibility") as Visibility | null;
     const status = searchParams.get("status") as MangaStatus | null;
     const creatorIdRaw = searchParams.get("creatorId");
-    const creatorId = creatorIdRaw ? Number.parseInt(creatorIdRaw, 10) : undefined;
+    const creatorId = creatorIdRaw
+      ? Number.parseInt(creatorIdRaw, 10)
+      : undefined;
     const search = searchParams.get("search") || "";
     const genreIdRaw = searchParams.get("genreId");
     const genreId = genreIdRaw ? Number.parseInt(genreIdRaw, 10) : undefined;
     const isMatureRaw = searchParams.get("isMature");
-    const isMature = isMatureRaw === "true" ? true : isMatureRaw === "false" ? false : undefined;
+    const isMature =
+      isMatureRaw === "true"
+        ? true
+        : isMatureRaw === "false"
+          ? false
+          : undefined;
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "10", 10);
 
@@ -113,7 +127,9 @@ export async function GET(request: NextRequest) {
       const genre = allGenres.find((g) => g.slug === genreId.toString());
       if (genre) {
         filteredMangas = mangas.filter((manga) => {
-          const slugs: string[] = Array.isArray(manga.genreSlugs) ? manga.genreSlugs : [];
+          const slugs: string[] = Array.isArray(manga.genreSlugs)
+            ? (manga.genreSlugs as string[])
+            : [];
           return slugs.includes(genre.slug);
         });
       }
@@ -121,12 +137,18 @@ export async function GET(request: NextRequest) {
 
     // Map genreSlugs to genre objects for frontend
     const mangasWithGenres = filteredMangas.map((manga) => {
-      const slugs: string[] = Array.isArray(manga.genreSlugs) ? manga.genreSlugs : [];
-      const genres = slugs.map((slug) => {
-        const genre = getGenreBySlug(slug);
-        return genre ? { id: genre.slug, slug: genre.slug, name: genre.name } : null;
-      }).filter((g) => g !== null);
-      
+      const slugs: string[] = Array.isArray(manga.genreSlugs)
+        ? (manga.genreSlugs as string[])
+        : [];
+      const genres = slugs
+        .map((slug) => {
+          const genre = getGenreBySlug(slug);
+          return genre
+            ? { id: genre.slug, slug: genre.slug, name: genre.name }
+            : null;
+        })
+        .filter((g) => g !== null);
+
       return {
         ...manga,
         genres,
@@ -156,20 +178,22 @@ export async function GET(request: NextRequest) {
           select: {
             amount: true,
             metadata: true,
-      },
-    });
+          },
+        });
 
         const relevantPurchases = purchases.filter((tx) => {
           if (!tx.metadata || typeof tx.metadata !== "object") return false;
           const metadata = tx.metadata as Record<string, unknown>;
           const chapterId = metadata.chapterId;
-          return typeof chapterId === "number" && chapterIds.includes(chapterId);
+          return (
+            typeof chapterId === "number" && chapterIds.includes(chapterId)
+          );
         });
 
         const sales = relevantPurchases.reduce((sum, tx) => sum + tx.amount, 0);
 
         return { ...manga, sales };
-      })
+      }),
     );
 
     const totalPages = Math.ceil(total / limit);
@@ -228,13 +252,16 @@ export async function POST(request: NextRequest) {
           // Create or get tags
           const tagPromises = tags.map(async (tagName: string) => {
             // Generate slug from tag name
-            const tagSlug = tagName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-            
+            const tagSlug = tagName
+              .toLowerCase()
+              .replace(/\s+/g, "-")
+              .replace(/[^a-z0-9-]/g, "");
+
             // Ensure slug is not empty
             if (!tagSlug) {
               throw new Error(`Invalid tag name: ${tagName}`);
             }
-            
+
             // Try to find existing tag using upsert
             const tag = await tx.tag.upsert({
               where: { slug: tagSlug },
@@ -260,7 +287,9 @@ export async function POST(request: NextRequest) {
               },
             });
 
-            const existingTagIds = new Set(existingRelations.map((r) => r.tagId));
+            const existingTagIds = new Set(
+              existingRelations.map((r) => r.tagId),
+            );
             const newTagIds = tagIds.filter((id) => !existingTagIds.has(id));
 
             if (newTagIds.length > 0) {

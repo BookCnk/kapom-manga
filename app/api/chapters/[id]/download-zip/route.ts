@@ -1,6 +1,7 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { handleRouteError, HttpError, ok } from "@/lib/api/http";
+import { handleRouteError, HttpError } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
 import { ensureTranslatorOrAdmin } from "@/lib/api/permissions";
 import JSZip from "jszip";
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
     // Return ZIP file
-    return new Response(zipBuffer, {
+    return new Response(new Uint8Array(zipBuffer), {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="${chapter.manga.title}-ตอนที่-${chapter.number}.zip"`,
@@ -99,3 +100,4 @@ export async function GET(request: NextRequest, { params }: Params) {
     return handleRouteError(error);
   }
 }
+

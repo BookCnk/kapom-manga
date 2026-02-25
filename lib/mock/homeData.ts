@@ -21,6 +21,7 @@ export type MangaCard = {
   views: number; // 13.6K -> 13600
   rating: number; // 4.7
   totalChapters: number;
+  sales?: number; // ยอดขาย
 
   // latest update
   latestChapter?: number;

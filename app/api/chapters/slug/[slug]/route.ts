@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
@@ -70,3 +71,4 @@ export async function GET(_request: NextRequest, { params }: Params) {
     return handleRouteError(error);
   }
 }
+

@@ -78,7 +78,7 @@ async function main() {
   console.log("📚 Seeding genres...");
   for (const name of mainGenres) {
     const slug = generateGenreSlug(name);
-    await prisma.genre.upsert({
+    await prisma.tag.upsert({
       where: { slug },
       update: { name },
       create: {
@@ -91,7 +91,7 @@ async function main() {
 
   for (const name of subGenres) {
     const slug = `sub-${generateGenreSlug(name)}`;
-    await prisma.genre.upsert({
+    await prisma.tag.upsert({
       where: { slug },
       update: { name },
       create: {
@@ -210,7 +210,9 @@ async function main() {
         where: { mangaId: manga.id },
       });
       chapters.push(...mangaChapters);
-      console.log(`ℹ️  Manga already has ${existingChapters} chapters: ${manga.title}`);
+      console.log(
+        `ℹ️  Manga already has ${existingChapters} chapters: ${manga.title}`,
+      );
     }
   }
 
@@ -252,7 +254,8 @@ async function main() {
 
         for (let i = 0; i < purchasesPerDay; i++) {
           // Random chapter from our created chapters
-          const randomChapter = chapters[Math.floor(Math.random() * chapters.length)];
+          const randomChapter =
+            chapters[Math.floor(Math.random() * chapters.length)];
           if (!randomChapter) continue;
 
           // Random amount between 5-50 coins

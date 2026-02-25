@@ -14,7 +14,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange>
         {children}
-        <Toaster 
+        <Toaster
           position="top-right"
           toastOptions={{
             className: "rtn-toast",
@@ -22,28 +22,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
               background: "hsl(var(--card))",
               border: "1px solid hsl(var(--border))",
               color: "hsl(var(--foreground))",
-            },
-            success: {
-              style: {
-                background: "hsl(var(--card))",
-                border: "1px solid rgb(249 115 22)", // orange-500
-                color: "hsl(var(--foreground))",
-              },
-              iconTheme: {
-                primary: "rgb(249 115 22)", // orange-500
-                secondary: "hsl(var(--card))",
-              },
-            },
-            error: {
-              style: {
-                background: "hsl(var(--card))",
-                border: "1px solid hsl(var(--destructive))",
-                color: "hsl(var(--foreground))",
-              },
-              iconTheme: {
-                primary: "hsl(var(--destructive))",
-                secondary: "hsl(var(--card))",
-              },
             },
           }}
         />
