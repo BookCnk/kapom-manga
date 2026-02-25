@@ -92,7 +92,7 @@ services:
       - .:/app
       - /app/node_modules
       - /app/.next
-    command: npm run dev
+    command: sh -c "npx prisma generate --schema prisma/schema.prisma && npm run dev"
 
 volumes:
   pgdata:
