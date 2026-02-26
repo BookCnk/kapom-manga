@@ -798,7 +798,11 @@ export default function SettingsPage() {
 
               <button
                 type="submit"
-                disabled={saving || (facebookUrl.trim() && facebookUrlValid === false) || (tiktokUrl.trim() && tiktokUrlValid === false)}
+                disabled={
+                  saving ||
+                  (facebookUrl.trim().length > 0 && facebookUrlValid === false) ||
+                  (tiktokUrl.trim().length > 0 && tiktokUrlValid === false)
+                }
                 className="w-full h-11 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 text-sm font-medium text-white shadow-lg shadow-orange-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {saving ? "กำลังบันทึก..." : "บันทึกข้อมูล"}

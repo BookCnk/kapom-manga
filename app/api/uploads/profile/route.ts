@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    let body = Buffer.from(arrayBuffer);
+    let body: Uint8Array = new Uint8Array(arrayBuffer);
 
     // แปลงเป็น WebP เพื่อลดขนาดไฟล์ แต่ยังคงความคมชัดให้มากที่สุด
     try {
