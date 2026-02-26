@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Plus, Search, Edit, Trash2, X, Eye, Heart, MessageCircle, Coins, Bookmark, FileText, ExternalLink } from "lucide-react";
-import { MangaStatus, Visibility } from "@/generated/prisma/enums";
+import { MangaStatus, Visibility } from "@/lib/types/client-enums";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

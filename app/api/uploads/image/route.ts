@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/api/auth";
 import { UserRole } from "@prisma/client";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
+import sharp from "sharp";
 
 // สร้างชื่อไฟล์สั้นๆ แต่ไม่ซ้ำ (timestamp + random 6 ตัวอักษร)
 function generateShortFileName(extension: string): string {
@@ -76,27 +77,61 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get("file");
-    const folder = (formData.get("folder")?.toString() || "manga-covers").replace(/^\/+|\/+$/g, "");
+    const rawFolder = (formData.get("folder")?.toString() || "manga-covers").replace(/^\/+|\/+$/g, "");
+    // ป้องกัน path traversal
+    const folder = rawFolder.replace(/\.\./g, "").replace(/\/+/g, "/");
     const oldUrl = formData.get("oldUrl")?.toString();
 
     if (!(file instanceof File)) {
       throw new HttpError(400, "file is required");
     }
 
+    // ตรวจประเภทไฟล์จาก MIME type หรือนามสกุลไฟล์ (บาง browser ไม่ส่ง MIME type)
     const allowedTypes = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
-    if (!allowedTypes.has(file.type)) {
+    const allowedExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
+    const fileExt = file.name?.split(".").pop()?.toLowerCase() || "";
+    
+    if (!allowedTypes.has(file.type) && !allowedExtensions.has(fileExt)) {
       throw new HttpError(400, "Only jpg/jpeg/png/webp are allowed");
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      throw new HttpError(400, "File size must be <= 2MB");
+    // จำกัดขนาด: cover = 2MB, episode pages = 5MB
+    const isEpisodePage = folder.includes("/episodes/");
+    const maxSize = isEpisodePage ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new HttpError(400, `File size must be <= ${isEpisodePage ? "5" : "2"}MB`);
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const body = Buffer.from(arrayBuffer);
+    const inputBuffer = Buffer.from(arrayBuffer);
 
-    const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "jpg";
-    const fileName = generateShortFileName(extension || "jpg");
+    // แปลงเป็น WebP ด้วย sharp พร้อมลดขนาดให้เหมาะกับการอ่าน โดยไม่ทำให้ภาพเล็กเกินความจำเป็น
+    // - สำหรับ episode pages: resize กว้างสุด ~1600px, quality ~86, smartSubsample เพื่อคงความคมชัดของเส้น/ตัวอักษร
+    // - สำหรับ cover/อื่นๆ: resize กว้างสุด ~1200px, quality 90
+    let pipeline = sharp(inputBuffer);
+
+    if (isEpisodePage) {
+      pipeline = pipeline.resize({
+        width: 1600,
+        withoutEnlargement: true, // รูปเล็กกว่านี้จะไม่ถูกขยาย
+      });
+    } else {
+      pipeline = pipeline.resize({
+        width: 1200,
+        withoutEnlargement: true,
+      });
+    }
+
+    const webpBuffer = await pipeline
+      .webp({
+        quality: isEpisodePage ? 86 : 90,
+        effort: 6,
+        smartSubsample: true,
+      })
+      .toBuffer();
+
+    // ใช้ .webp extension เสมอ
+    const fileName = generateShortFileName("webp");
     const key = `${folder}/${fileName}`;
 
     const s3 = getS3Client();
@@ -119,13 +154,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // อัพโหลดรูปใหม่
+    // อัพโหลดรูปใหม่ (WebP)
     await s3.send(
       new PutObjectCommand({
         Bucket: bucket,
         Key: key,
-        Body: body,
-        ContentType: file.type,
+        Body: webpBuffer,
+        ContentType: "image/webp",
       }),
     );
 

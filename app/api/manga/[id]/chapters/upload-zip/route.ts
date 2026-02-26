@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import { randomBytes } from "node:crypto";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +10,67 @@ import {
   ensureTranslatorOrAdmin,
 } from "@/lib/api/permissions";
 import JSZip from "jszip";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import sharp from "sharp";
+
+// สร้างชื่อไฟล์สั้นๆ แต่ไม่ซ้ำ
+function generateShortFileName(extension: string): string {
+  const timestamp = Date.now().toString(36);
+  const randomStr = randomBytes(3).toString("hex");
+  return `${timestamp}-${randomStr}.${extension}`;
+}
+
+function getS3Client() {
+  const endpoint = process.env.S3_ENDPOINT;
+  const port = process.env.S3_PORT;
+  const useSsl = process.env.S3_USE_SSL === "true";
+  const accessKeyId = process.env.S3_ACCESS_KEY;
+  const secretAccessKey = process.env.S3_SECRET_KEY;
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    throw new HttpError(500, "S3 configuration is missing");
+  }
+
+  const protocol = useSsl ? "https" : "http";
+  const fullEndpoint = port ? `${protocol}://${endpoint}:${port}` : `${protocol}://${endpoint}`;
+
+  return new S3Client({
+    region: "us-east-1",
+    endpoint: fullEndpoint,
+    forcePathStyle: true,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+}
+
+function buildPublicUrl(bucket: string, key: string) {
+  const explicitBaseUrl = process.env.S3_PUBLIC_BASE_URL;
+  if (explicitBaseUrl) {
+    return `${explicitBaseUrl.replace(/\/$/, "")}/${bucket}/${key}`;
+  }
+
+  const endpoint = process.env.S3_ENDPOINT;
+  const port = process.env.S3_PORT;
+  const useSsl = process.env.S3_USE_SSL === "true";
+  if (!endpoint) {
+    throw new HttpError(500, "S3 endpoint is missing");
+  }
+
+  const protocol = useSsl ? "https" : "http";
+  const host = endpoint === "minio" ? "localhost" : endpoint;
+  const withPort = port ? `${host}:${port}` : host;
+  return `${protocol}://${withPort}/${bucket}/${key}`;
+}
+
+function getContentType(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  const mimeMap: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+  };
+  return mimeMap[ext] || "image/jpeg";
+}
 
 type Params = {
   params: {
@@ -160,8 +222,31 @@ export async function POST(request: NextRequest, { params }: Params) {
       throw new HttpError(400, "ไม่พบไฟล์รูปภาพใน ZIP");
     }
 
+    // ดึง slug ของมังงะเพื่อใช้สร้างโฟลเดอร์ใน S3
+    const manga = await prisma.manga.findUnique({
+      where: { id: mangaId },
+      select: { slug: true },
+    });
+    if (!manga) {
+      throw new HttpError(404, "ไม่พบมังงะ");
+    }
+
+    const bucket = process.env.S3_BUCKET_NAME;
+    if (!bucket) {
+      throw new HttpError(500, "S3 bucket name is missing");
+    }
+
+    const s3 = getS3Client();
+
     // Create chapters and pages
     const createdChapters = [];
+    const chapterResults: Array<{
+      number: number;
+      title: string;
+      status: "success" | "skipped" | "error";
+      message?: string;
+    }> = [];
+
     for (const chapterData of chaptersData) {
       // Check if chapter number already exists
       const existingChapter = await prisma.chapter.findFirst({
@@ -173,6 +258,12 @@ export async function POST(request: NextRequest, { params }: Params) {
 
       if (existingChapter) {
         console.warn(`Chapter ${chapterData.number} already exists, skipping`);
+        chapterResults.push({
+          number: chapterData.number,
+          title: chapterData.title,
+          status: "skipped",
+          message: `ตอนที่ ${chapterData.number} มีอยู่แล้ว (ซ้ำ)`,
+        });
         continue;
       }
 
@@ -198,40 +289,83 @@ export async function POST(request: NextRequest, { params }: Params) {
         attempts++;
       }
 
-      const chapter = await prisma.chapter.create({
-        data: {
-          mangaId,
-          title: chapterData.title,
-          number: chapterData.number,
-          slug: chapterSlug,
-          isLocked: body.defaultPrice > 0,
-          priceCoins: body.defaultPrice,
-          publishedAt: body.defaultStatus === "published" ? new Date() : undefined,
-        },
-      });
-
-      // Create pages
-      for (let i = 0; i < chapterData.images.length; i++) {
-        const image = chapterData.images[i];
-        // Convert buffer to base64 for storage (in production, upload to storage service)
-        const base64 = image.data.toString("base64");
-        const dataUrl = `data:image/jpeg;base64,${base64}`;
-
-        await prisma.page.create({
+      try {
+        const chapter = await prisma.chapter.create({
           data: {
-            chapterId: chapter.id,
-            pageNo: i + 1,
-            imageUrl: dataUrl, // In production, upload to storage and use URL
+            mangaId,
+            title: chapterData.title,
+            number: chapterData.number,
+            slug: chapterSlug,
+            isLocked: body.defaultPrice > 0,
+            priceCoins: body.defaultPrice,
+            publishedAt: body.defaultStatus === "published" ? new Date() : undefined,
           },
         });
-      }
 
-      createdChapters.push(chapter);
+        // อัพโหลดรูปภาพแต่ละหน้าไป S3 (แปลงเป็น WebP + resize ให้เหมาะกับการอ่าน)
+        // โครงสร้าง: manga/{slug}/episodes/{chapterNumber}/
+        for (let i = 0; i < chapterData.images.length; i++) {
+          const image = chapterData.images[i];
+
+          // Resize กว้างสุด ~1600px และแปลงเป็น WebP เพื่อลดขนาดไฟล์ โดยคงความคมชัด
+          const webpBuffer = await sharp(image.data)
+            .resize({
+              width: 1600,
+              withoutEnlargement: true,
+            })
+            .webp({
+              quality: 86,
+              effort: 6,
+              smartSubsample: true,
+            })
+            .toBuffer();
+
+          const fileName = generateShortFileName("webp");
+          const key = `manga/${manga.slug}/episodes/${chapterData.number}/${fileName}`;
+
+          await s3.send(
+            new PutObjectCommand({
+              Bucket: bucket,
+              Key: key,
+              Body: webpBuffer,
+              ContentType: "image/webp",
+            }),
+          );
+
+          const imageUrl = buildPublicUrl(bucket, key);
+
+          await prisma.page.create({
+            data: {
+              chapterId: chapter.id,
+              pageNo: i + 1,
+              imageUrl,
+            },
+          });
+        }
+
+        createdChapters.push(chapter);
+        chapterResults.push({
+          number: chapterData.number,
+          title: chapterData.title,
+          status: "success",
+          message: `ตอนที่ ${chapterData.number} อัพโหลดสำเร็จ (${chapterData.images.length} หน้า)`,
+        });
+      } catch (error) {
+        console.error(`Error creating chapter ${chapterData.number}:`, error);
+        chapterResults.push({
+          number: chapterData.number,
+          title: chapterData.title,
+          status: "error",
+          message: `ตอนที่ ${chapterData.number} เกิดข้อผิดพลาด: ${error instanceof Error ? error.message : "Unknown error"}`,
+        });
+      }
     }
 
     return ok({
       chaptersCreated: createdChapters.length,
       chapters: createdChapters,
+      results: chapterResults,
+      total: chaptersData.length,
     });
   } catch (error) {
     return handleRouteError(error);

@@ -3,15 +3,27 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, Upload, X, Image as ImageIcon, Plus, FileText, BarChart3, List, Trash2, FileStack, Edit, Download, ExternalLink, Pencil, TrendingUp, Coins, Settings, Search, Menu } from "lucide-react";
+import { ArrowLeft, Save, Upload, X, Image as ImageIcon, Plus, FileText, BarChart3, List, Trash2, FileStack, Edit, Download, ExternalLink, Pencil, TrendingUp, Coins, Settings, Search, Menu, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import dynamic from "next/dynamic";
-import { MangaStatus, Visibility } from "@/generated/prisma/enums";
+import { MangaStatus, Visibility } from "@/lib/types/client-enums";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import AuthGuard from "@/components/writer/AuthGuard";
 import { checkInappropriateContent } from "@/lib/utils/content-filter";
 import { useAuth } from "@/contexts/AuthContext";
 import * as nsfwjs from "nsfwjs";
+import JSZip from "jszip";
+
+type MultiChapterStatus = "success" | "skipped" | "error" | "processing" | "pending";
+
+type MultiChapterResult = {
+  number: number;
+  title: string;
+  status: MultiChapterStatus;
+  message?: string;
+  totalPages?: number;
+  uploadedPages?: number;
+};
 
 // Helper function for Buddhist Era
 const getCurrentYearBE = () => new Date().getFullYear() + 543;
@@ -281,6 +293,15 @@ export default function EditMangaPage() {
     current: number;
     total: number;
   } | null>(null);
+  const [uploadedPages, setUploadedPages] = useState<Set<number>>(new Set());
+  const [multiChapterProgress, setMultiChapterProgress] = useState<{
+    current: number; // จำนวนตอนที่ประมวลผลเสร็จแล้ว (success/skip/error)
+    total: number; // จำนวนตอนทั้งหมดใน ZIP
+    results: MultiChapterResult[];
+  } | null>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [multiUploadProcessing, setMultiUploadProcessing] = useState(false);
+  const [multiUploadStep, setMultiUploadStep] = useState(0);
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [zipFileName, setZipFileName] = useState("");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -356,17 +377,72 @@ export default function EditMangaPage() {
     loadNsfwModel();
   }, []);
 
-  // อัพโหลดรูปปกไป S3 และลบรูปเก่า
+  // ป้องกันการออกจากหน้าก่อนอัพโหลดเสร็จ
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (uploadingChapter || uploadingProgress || multiUploadProcessing) {
+        e.preventDefault();
+        e.returnValue = "กำลังอัพโหลดอยู่ หากออกจากหน้านี้ตอนจะเสียรูปจะโหลดไม่ครบ";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [uploadingChapter, uploadingProgress, multiUploadProcessing]);
+
+  // เลื่อน carousel ไปยังตอนที่กำลังอัพโหลด (processing) อัตโนมัติ
+  useEffect(() => {
+    if (!multiChapterProgress) return;
+    const processingIndex = multiChapterProgress.results.findIndex(
+      (r) => r.status === "processing",
+    );
+    if (processingIndex === -1) return;
+
+    const targetCarouselIndex = Math.floor(
+      processingIndex / Math.max(1, Math.min(2, multiChapterProgress.results.length)),
+    );
+
+    setCarouselIndex((prev) =>
+      prev === targetCarouselIndex ? prev : targetCarouselIndex,
+    );
+  }, [multiChapterProgress]);
+
+  // Animate processing steps for multi-chapter upload
+  useEffect(() => {
+    if (!multiUploadProcessing) {
+      setMultiUploadStep(0);
+      return;
+    }
+    const steps = [
+      "กำลังแตกไฟล์ ZIP...",
+      "กำลังตรวจสอบโครงสร้างโฟลเดอร์...",
+      "กำลังแปลงรูปภาพเป็น WebP...",
+      "กำลังอัพโหลดรูปภาพไปเซิร์ฟเวอร์...",
+      "กำลังบันทึกข้อมูลตอน...",
+    ];
+    const interval = setInterval(() => {
+      setMultiUploadStep((prev) => (prev + 1) % steps.length);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [multiUploadProcessing]);
+
+  // อัพโหลดรูปปกไป S3 และลบรูปเก่า (โครงสร้าง: manga/{slug}/cover/)
   const uploadCoverToS3 = async (file: File, previewUrl: string, oldUrl: string | null) => {
     try {
       setCheckingNsfw(true);
       const sessionToken = localStorage.getItem("session_token") || "";
       
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("folder", "manga-covers");
+      // ใช้โครงสร้างโฟลเดอร์ตาม slug ของมังงะ
+      const coverFolder = slug ? `manga/${slug}/cover` : "manga-covers";
+      
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", file);
+      uploadFormData.append("folder", coverFolder);
       if (oldUrl) {
-        formData.append("oldUrl", oldUrl);
+        uploadFormData.append("oldUrl", oldUrl);
       }
 
       const response = await fetch("/api/uploads/image", {
@@ -374,7 +450,7 @@ export default function EditMangaPage() {
         headers: {
           "x-session-token": sessionToken,
         },
-        body: formData,
+        body: uploadFormData,
       });
 
       const data = await response.json();
@@ -993,23 +1069,35 @@ export default function EditMangaPage() {
       }
 
       const chapterId = chapterData.data.chapter.id;
+      const chapterNumber = chapterFormData.number;
 
-      // Upload images and create pages
-      // Convert all images to base64 first
+      // อัพโหลดรูปภาพทีละหน้าไป S3 แล้วสร้าง page record
+      // โครงสร้าง: manga/{slug}/episodes/{chapterNumber}/
       setUploadingProgress({ current: 0, total: chapterImages.length });
-      
-      const pagePromises = chapterImages.map(async (file, index) => {
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
+      setUploadedPages(new Set());
+
+      for (let index = 0; index < chapterImages.length; index++) {
+        const file = chapterImages[index];
+
+        // 1) อัพโหลดรูปไป S3
+        const uploadForm = new FormData();
+        uploadForm.append("file", file);
+        uploadForm.append("folder", `manga/${manga.slug}/episodes/${chapterNumber}`);
+
+        const uploadRes = await fetch("/api/uploads/image", {
+          method: "POST",
+          headers: { "x-session-token": sessionToken },
+          body: uploadForm,
         });
 
-        // Update progress
-        setUploadingProgress({ current: index + 1, total: chapterImages.length });
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok || !uploadData.success || !uploadData.data?.url) {
+          throw new Error(uploadData.error || `Failed to upload page ${index + 1}`);
+        }
 
-        // Create page
+        const s3Url = uploadData.data.url;
+
+        // 2) สร้าง page record ใน DB
         const pageResponse = await fetch(`/api/chapters/${chapterId}/pages`, {
           method: "POST",
           headers: {
@@ -1018,24 +1106,25 @@ export default function EditMangaPage() {
           },
           body: JSON.stringify({
             pageNo: index + 1,
-            imageUrl: base64, // In production, upload to storage service and use the URL
+            imageUrl: s3Url,
           }),
         });
 
         if (!pageResponse.ok) {
           const errorData = await pageResponse.json();
-          throw new Error(errorData.error || "Failed to create page");
+          throw new Error(errorData.error || `Failed to create page ${index + 1}`);
         }
 
-        return pageResponse.json();
-      });
+        // 3) อัพเดท progress และติ๊กถูก
+        setUploadingProgress({ current: index + 1, total: chapterImages.length });
+        setUploadedPages((prev) => new Set(prev).add(index));
+      }
 
-      // Wait for all pages to be created
-      await Promise.all(pagePromises);
       setUploadingProgress(null);
 
       toast.success("สร้างตอนสำเร็จ 👌");
       setShowAddChapterModal(false);
+      setUploadedPages(new Set());
       await fetchManga(); // Refresh manga data
     } catch (error) {
       console.error("Failed to create chapter:", error);
@@ -1057,6 +1146,7 @@ export default function EditMangaPage() {
       setEditingChapterId(null);
       setImagePreviews([]);
       setChapterImages([]);
+      setUploadedPages(new Set());
       // Wait a bit for modal to close
       await new Promise(resolve => setTimeout(resolve, 100));
     }
@@ -1179,35 +1269,49 @@ export default function EditMangaPage() {
         }
       }
 
-      // Create new pages from previews (existing images or new uploads)
+      // อัพโหลดรูปภาพทีละหน้าไป S3 แล้วสร้าง page record
+      // โครงสร้าง: manga/{slug}/episodes/{chapterNumber}/
+      const chapterNumber = chapterFormData.number;
       setUploadingProgress({ current: 0, total: imagePreviews.length });
-      
-      const pagePromises = imagePreviews.map(async (preview, index) => {
-        // If it's a data URL (new upload), use it directly
-        // If it's an existing image URL, fetch and convert to base64
-        let base64 = preview;
-        
-        if (!preview.startsWith("data:")) {
-          // It's an existing image URL, fetch it
-          try {
-            const imageResponse = await fetch(preview);
-            const blob = await imageResponse.blob();
-            base64 = await new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onload = (e) => resolve(e.target?.result as string);
-              reader.readAsDataURL(blob);
-            });
-          } catch (error) {
-            console.error("Failed to fetch existing image:", error);
-            // Use original URL as fallback
-            base64 = preview;
+      setUploadedPages(new Set());
+
+      for (let index = 0; index < imagePreviews.length; index++) {
+        const preview = imagePreviews[index];
+        let imageUrl = preview;
+
+        // ถ้าเป็น URL ของ S3 อยู่แล้ว ใช้ได้เลย
+        // ถ้าเป็น data URL (รูปใหม่) หรือ local file → อัพโหลดไป S3
+        if (preview.startsWith("data:") || (chapterImages[index] instanceof File)) {
+          // ถ้ามี File object ให้ใช้ File, ไม่งั้นแปลง data URL เป็น blob
+          let fileToUpload: Blob;
+          if (chapterImages[index] instanceof File) {
+            fileToUpload = chapterImages[index];
+          } else {
+            // แปลง data URL เป็น Blob
+            const response = await fetch(preview);
+            fileToUpload = await response.blob();
           }
+
+          const uploadForm = new FormData();
+          uploadForm.append("file", fileToUpload, chapterImages[index]?.name || `page-${index + 1}.jpg`);
+          uploadForm.append("folder", `manga/${manga.slug}/episodes/${chapterNumber}`);
+
+          const uploadRes = await fetch("/api/uploads/image", {
+            method: "POST",
+            headers: { "x-session-token": sessionToken },
+            body: uploadForm,
+          });
+
+          const uploadData = await uploadRes.json();
+          if (!uploadRes.ok || !uploadData.success || !uploadData.data?.url) {
+            throw new Error(uploadData.error || `Failed to upload page ${index + 1}`);
+          }
+
+          imageUrl = uploadData.data.url;
         }
+        // ถ้าเป็น S3 URL อยู่แล้ว (เช่น existing image) → ใช้ URL เดิมได้
 
-        // Update progress
-        setUploadingProgress({ current: index + 1, total: imagePreviews.length });
-
-        // Create page
+        // สร้าง page record
         const pageResponse = await fetch(`/api/chapters/${editingChapterId}/pages`, {
           method: "POST",
           headers: {
@@ -1216,19 +1320,20 @@ export default function EditMangaPage() {
           },
           body: JSON.stringify({
             pageNo: index + 1,
-            imageUrl: base64,
+            imageUrl,
           }),
         });
 
         if (!pageResponse.ok) {
           const errorData = await pageResponse.json();
-          throw new Error(errorData.error || "Failed to create page");
+          throw new Error(errorData.error || `Failed to create page ${index + 1}`);
         }
 
-        return pageResponse.json();
-      });
+        // อัพเดท progress และติ๊กถูก
+        setUploadingProgress({ current: index + 1, total: imagePreviews.length });
+        setUploadedPages((prev) => new Set(prev).add(index));
+      }
 
-      await Promise.all(pagePromises);
       setUploadingProgress(null);
 
       toast.success("แก้ไขข้อมูลตอนแล้ว 👌");
@@ -1236,6 +1341,7 @@ export default function EditMangaPage() {
       setEditingChapterId(null);
       setImagePreviews([]);
       setChapterImages([]);
+      setUploadedPages(new Set());
       await fetchManga(); // Refresh manga data
     } catch (error) {
       console.error("Failed to update chapter:", error);
@@ -1248,61 +1354,369 @@ export default function EditMangaPage() {
   const handleUploadMultiChapters = async () => {
     if (!manga || !zipFile) return;
 
+    // รอให้ auth โหลดเสร็จ
+    if (authLoading) return;
+
+    // ต้องล็อกอินก่อน
+    if (!authUser) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!authUser) {
+        toast.error("กรุณาเข้าสู่ระบบก่อนอัพโหลดหลายตอน");
+        router.push("/login");
+        return;
+      }
+    }
+
     try {
       setUploadingChapter(true);
+      setUploadingProgress(null);
+      setMultiChapterProgress(null);
+      setMultiUploadProcessing(true);
+      setMultiUploadStep(0);
+      setCarouselIndex(0);
+
       const sessionToken = localStorage.getItem("session_token") || "";
+      if (!sessionToken) {
+        toast.error("กรุณาเข้าสู่ระบบก่อนอัพโหลดหลายตอน");
+        router.push("/login");
+        return;
+      }
 
-      // Convert ZIP to base64
-      const zipBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(zipFile);
-      });
+      // 1) โหลดข้อมูล ZIP ฝั่ง client
+      const zip = await JSZip.loadAsync(zipFile);
+      const files = Object.keys(zip.files);
+      const hasFolders = files.some((file) => zip.files[file].dir);
 
-      // Upload ZIP to API
-      const response = await fetch(`/api/manga/${manga.id}/chapters/upload-zip`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-session-token": sessionToken,
-        },
-        body: JSON.stringify({
-          zipFile: zipBase64,
-          zipFileName: zipFileName,
-          defaultPrice: chapterFormData.price,
-          defaultStatus: chapterFormData.status,
+      type ChapterFromZip = {
+        number: number;
+        title: string;
+        filePaths: string[];
+      };
+
+      const chaptersFromZip: ChapterFromZip[] = [];
+
+      // Helper: แปลงชื่อเป็นเลขตอน (เหมือนฝั่ง API)
+      const extractChapterNumber = (name: string): number | null => {
+        const match = name.match(/ตอนที่\s*(\d+(?:\.\d+)?)/i);
+        if (match) return parseFloat(match[1]);
+        const filenameMatch = name.match(/(\d+(?:\.\d+)?)/);
+        if (filenameMatch) return parseFloat(filenameMatch[1]);
+        return null;
+      };
+
+      if (hasFolders) {
+        // โครงสร้างหลายตอน: แยกตามโฟลเดอร์
+        const folders = files.filter((file) => zip.files[file].dir);
+
+        for (const folder of folders) {
+          const folderName = folder.replace(/\/$/, "");
+          const chapterNumber = extractChapterNumber(folderName);
+          if (!chapterNumber) continue;
+
+          const folderFiles = files.filter(
+            (file) => file.startsWith(folder) && !zip.files[file].dir,
+          );
+
+          const sortedFiles = folderFiles
+            .filter((file) => /\.(jpg|jpeg|png|webp)$/i.test(file))
+            .sort((a, b) => {
+              const nameA = a.replace(folder, "").toLowerCase();
+              const nameB = b.replace(folder, "").toLowerCase();
+              return nameA.localeCompare(nameB, undefined, {
+                numeric: true,
+                sensitivity: "base",
+              });
+            });
+
+          if (sortedFiles.length === 0) continue;
+
+          chaptersFromZip.push({
+            number: chapterNumber,
+            title: `ตอนที่ ${chapterNumber}`,
+            filePaths: sortedFiles,
+          });
+        }
+      } else {
+        // โครงสร้างตอนเดียว: รูปอยู่ root ของ ZIP
+        const imageFiles = files
+          .filter(
+            (file) =>
+              !zip.files[file].dir && /\.(jpg|jpeg|png|webp)$/i.test(file),
+          )
+          .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase(), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          }));
+
+        if (imageFiles.length === 0) {
+          throw new Error("ไม่พบไฟล์รูปภาพใน ZIP");
+        }
+
+        const chapterNumber = extractChapterNumber(zipFileName || zipFile.name) || 1;
+
+        chaptersFromZip.push({
+          number: chapterNumber,
+          title: `ตอนที่ ${chapterNumber}`,
+          filePaths: imageFiles,
+        });
+      }
+
+      if (chaptersFromZip.length === 0) {
+        toast.error("ไม่พบตอนที่สามารถอัพโหลดได้ใน ZIP");
+        setMultiUploadProcessing(false);
+        return;
+      }
+
+      // 2) โหลดรายการตอนที่มีอยู่แล้วของมังงะ เพื่อเช็คตอนซ้ำ
+      const existingRes = await fetch(`/api/manga/${manga.id}/chapters`);
+      const existingJson = await existingRes.json();
+      const existingChapters: Array<{ number: number }> =
+        existingJson?.success && existingJson.data?.chapters
+          ? existingJson.data.chapters
+          : [];
+
+      const existingNumbers = new Set(existingChapters.map((c) => c.number));
+
+      // 3) สร้าง state เริ่มต้นสำหรับ progress
+      setMultiChapterProgress({
+        current: 0,
+        total: chaptersFromZip.length,
+        results: chaptersFromZip.map((ch): MultiChapterResult => {
+          const isDuplicate = existingNumbers.has(ch.number);
+          return {
+            number: ch.number,
+            title: ch.title,
+            status: isDuplicate ? "skipped" : "pending",
+            message: isDuplicate
+              ? `ตอนที่ ${ch.number} มีอยู่แล้ว (ซ้ำ)`
+              : undefined,
+            totalPages: ch.filePaths.length,
+            uploadedPages: 0,
+          };
         }),
       });
 
-      const data = await response.json();
+      let successCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Wait a bit before showing error in case auth is still loading
-          await new Promise(resolve => setTimeout(resolve, 500));
-          if (authLoading) {
-            return; // Still loading, don't show error
-          }
-          toast.error("กรุณาเข้าสู่ระบบใหม่");
-          router.push("/login");
-          return;
+      // 4) ประมวลผลทีละตอน (เพื่อให้รู้ progress จริง)
+      for (const chapterData of chaptersFromZip) {
+        const isDuplicate = existingNumbers.has(chapterData.number);
+
+        if (isDuplicate) {
+          skippedCount += 1;
+          setMultiChapterProgress((prev) => {
+            if (!prev) return prev;
+            const results: MultiChapterResult[] = prev.results.map((r): MultiChapterResult =>
+              r.number === chapterData.number
+                ? {
+                    ...r,
+                    status: "skipped",
+                    message: `ตอนที่ ${chapterData.number} มีอยู่แล้ว (ซ้ำ)`,
+                  }
+                : r,
+            );
+            return {
+              ...prev,
+              current: prev.current + 1,
+              results,
+            };
+          });
+          continue;
         }
-        throw new Error(data.error || "Failed to upload chapters");
+
+        // อัพเดทสถานะเป็นกำลังประมวลผล
+        setMultiChapterProgress((prev) => {
+          if (!prev) return prev;
+          const results: MultiChapterResult[] = prev.results.map((r): MultiChapterResult =>
+            r.number === chapterData.number
+              ? { ...r, status: "processing", uploadedPages: 0 }
+              : r,
+          );
+          return { ...prev, results };
+        });
+
+        try {
+          // 4.1) สร้างตอนใหม่
+          const chapterSlug = await generateUniqueChapterSlug();
+          const createChapterRes = await fetch(
+            `/api/manga/${manga.id}/chapters`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-session-token": sessionToken,
+              },
+              body: JSON.stringify({
+                title: chapterData.title,
+                number: chapterData.number,
+                slug: chapterSlug,
+                isLocked: chapterFormData.price > 0,
+                priceCoins: chapterFormData.price,
+                publishedAt:
+                  chapterFormData.status === "published"
+                    ? new Date().toISOString()
+                    : undefined,
+              }),
+            },
+          );
+
+          const createChapterJson = await createChapterRes.json();
+          if (!createChapterRes.ok || !createChapterJson.success || !createChapterJson.data?.chapter) {
+            throw new Error(
+              createChapterJson.error ||
+                `สร้างตอนที่ ${chapterData.number} ไม่สำเร็จ`,
+            );
+          }
+
+          const chapterId = createChapterJson.data.chapter.id;
+
+          // 4.2) อัพโหลดรูปทีละหน้า + สร้าง page record
+          let uploadedPages = 0;
+          for (let i = 0; i < chapterData.filePaths.length; i++) {
+            const path = chapterData.filePaths[i];
+            const entry = zip.files[path];
+            if (!entry || entry.dir) continue;
+
+            const blob = await entry.async("blob");
+            const fileName = path.split("/").pop() || path;
+            const file = new File([blob], fileName, { type: blob.type || "image/jpeg" });
+
+            // อัพโหลดรูปไป S3
+            const uploadForm = new FormData();
+            uploadForm.append("file", file);
+            uploadForm.append(
+              "folder",
+              `manga/${manga.slug}/episodes/${chapterData.number}`,
+            );
+
+            const uploadRes = await fetch("/api/uploads/image", {
+              method: "POST",
+              headers: { "x-session-token": sessionToken },
+              body: uploadForm,
+            });
+
+            const uploadJson = await uploadRes.json();
+            if (
+              !uploadRes.ok ||
+              !uploadJson.success ||
+              !uploadJson.data?.url
+            ) {
+              throw new Error(
+                uploadJson.error ||
+                  `อัพโหลดรูปหน้า ${i + 1} ของตอนที่ ${chapterData.number} ไม่สำเร็จ`,
+              );
+            }
+
+            const imageUrl = uploadJson.data.url;
+
+            // สร้าง page record
+            const pageRes = await fetch(`/api/chapters/${chapterId}/pages`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-session-token": sessionToken,
+              },
+              body: JSON.stringify({
+                pageNo: i + 1,
+                imageUrl,
+              }),
+            });
+
+            const pageJson = await pageRes.json().catch(() => ({}));
+            if (!pageRes.ok) {
+              throw new Error(
+                pageJson.error ||
+                  `สร้างหน้า ${i + 1} ของตอนที่ ${chapterData.number} ไม่สำเร็จ`,
+              );
+            }
+
+            uploadedPages += 1;
+
+            // อัพเดท progress ของตอนนี้ (ตามจำนวนรูป)
+            setMultiChapterProgress((prev) => {
+              if (!prev) return prev;
+              const results: MultiChapterResult[] = prev.results.map((r): MultiChapterResult =>
+                r.number === chapterData.number
+                  ? {
+                      ...r,
+                      status: "processing",
+                      uploadedPages,
+                      totalPages:
+                        r.totalPages ?? chapterData.filePaths.length,
+                    }
+                  : r,
+              );
+              return { ...prev, results };
+            });
+          }
+
+          // ตอนนี้เสร็จสมบูรณ์
+          successCount += 1;
+          setMultiChapterProgress((prev) => {
+            if (!prev) return prev;
+            const results: MultiChapterResult[] = prev.results.map((r): MultiChapterResult =>
+              r.number === chapterData.number
+                ? {
+                    ...r,
+                    status: "success",
+                    uploadedPages: r.totalPages ?? uploadedPages,
+                    message: `ตอนที่ ${chapterData.number} อัพโหลดสำเร็จ (${uploadedPages} หน้า)`,
+                  }
+                : r,
+            );
+            return {
+              ...prev,
+              current: prev.current + 1,
+              results,
+            };
+          });
+        } catch (err) {
+          console.error(`Error processing chapter ${chapterData.number}:`, err);
+          errorCount += 1;
+          setMultiChapterProgress((prev) => {
+            if (!prev) return prev;
+            const results: MultiChapterResult[] = prev.results.map((r): MultiChapterResult =>
+              r.number === chapterData.number
+                ? {
+                    ...r,
+                    status: "error",
+                    message:
+                      err instanceof Error
+                        ? err.message
+                        : `ตอนที่ ${chapterData.number} เกิดข้อผิดพลาด`,
+                  }
+                : r,
+            );
+            return {
+              ...prev,
+              current: prev.current + 1,
+              results,
+            };
+          });
+        }
       }
 
-      if (data.success) {
-        toast.success(`สร้างตอนสำเร็จ ${data.data?.chaptersCreated || 0} ตอน 👌`);
-        setShowAddChapterModal(false);
-        setZipFile(null);
-        setZipFileName("");
-        await fetchManga(); // Refresh manga data
-      } else {
-        throw new Error(data.error || "Failed to upload chapters");
+      setMultiUploadProcessing(false);
+
+      // สรุปผล
+      if (multiChapterProgress) {
+        setCarouselIndex(0);
       }
+
+      let message = `สร้างตอนสำเร็จ ${successCount} ตอน`;
+      if (skippedCount > 0) message += `, ข้าม ${skippedCount} ตอน (ซ้ำ)`;
+      if (errorCount > 0) message += `, เกิดข้อผิดพลาด ${errorCount} ตอน`;
+      message += " 👌";
+
+      toast.success(message);
+
+      await fetchManga();
     } catch (error) {
       console.error("Failed to upload chapters:", error);
       toast.error("เกิดข้อผิดพลาดในการอัปโหลดตอน");
+      setMultiUploadProcessing(false);
     } finally {
       setUploadingChapter(false);
     }
@@ -1818,6 +2232,16 @@ export default function EditMangaPage() {
                 const nextNumber = manga?.chapters.length 
                   ? Math.max(...manga.chapters.map(c => c.number)) + 1 
                   : 1;
+
+                // ค่าเริ่มต้นทุกครั้งที่เปิดเพิ่มตอนใหม่ -> โหมดตอนเดียว
+                setChapterType("single");
+                setMultiChapterProgress(null);
+                setMultiUploadProcessing(false);
+                setMultiUploadStep(0);
+                setCarouselIndex(0);
+                setZipFile(null);
+                setZipFileName("");
+
                 setChapterFormData({
                   title: "",
                   number: nextNumber,
@@ -2288,10 +2712,19 @@ export default function EditMangaPage() {
               </h2>
               <button
                 onClick={() => {
+                  if (uploadingChapter || uploadingProgress || multiUploadProcessing) return;
                   setShowAddChapterModal(false);
                   setEditingChapterId(null);
                   setImagePreviews([]);
                   setChapterImages([]);
+                  setUploadedPages(new Set());
+                  setMultiChapterProgress(null);
+                  setMultiUploadProcessing(false);
+                  setMultiUploadStep(0);
+                  setCarouselIndex(0);
+                  setZipFile(null);
+                  setZipFileName("");
+                  setChapterType("single");
                   setChapterFormData({
                     title: "",
                     number: 1,
@@ -2299,13 +2732,36 @@ export default function EditMangaPage() {
                     status: "published",
                   });
                 }}
-                className="p-2 hover:bg-muted rounded-lg transition-colors">
+                disabled={uploadingChapter || !!uploadingProgress || multiUploadProcessing}
+                className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  (uploadingChapter || uploadingProgress || multiUploadProcessing)
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:bg-muted"
+                )}>
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+              {/* Warning Message - แสดงเมื่อกำลังอัพโหลด (single หรือ multi) */}
+              {(uploadingChapter || uploadingProgress) && chapterType === "single" && (
+                <div className="bg-red-500/10 border-2 border-red-500/50 rounded-lg p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-500 mt-0.5 flex-shrink-0"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-red-500 mb-1">
+                        ⚠️ กำลังอัพโหลดอยู่
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        กรุณาอย่าออกจากหน้านี้ก่อนอัพโหลดเสร็จ หากออกจากหน้านี้ตอนจะเสียรูปจะโหลดไม่ครบ
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Loading State */}
               {loadingChapterData && (
                 <div className="flex items-center justify-center py-12">
@@ -2320,23 +2776,39 @@ export default function EditMangaPage() {
               {!editingChapterId && !loadingChapterData && (
                 <div className="flex gap-4">
                   <button
-                    onClick={() => setChapterType("single")}
+                    onClick={() => {
+                      if (uploadingChapter || uploadingProgress || multiUploadProcessing) return;
+                      setChapterType("single");
+                      // รีเซ็ทสถานะ multi-chapter เมื่อสลับไป single
+                      setMultiChapterProgress(null);
+                      setMultiUploadProcessing(false);
+                      setCarouselIndex(0);
+                      setZipFile(null);
+                      setZipFileName("");
+                    }}
+                    disabled={uploadingChapter || !!uploadingProgress || multiUploadProcessing}
                     className={cn(
                       "flex-1 px-4 py-3 rounded-lg border transition-colors flex items-center justify-center gap-2",
                       chapterType === "single"
                         ? "bg-orange-500 text-white border-orange-500"
-                        : "bg-background border-border text-foreground hover:bg-muted"
+                        : "bg-background border-border text-foreground hover:bg-muted",
+                      (uploadingChapter || uploadingProgress || multiUploadProcessing) && "opacity-50 cursor-not-allowed"
                     )}>
                     <FileText className="w-4 h-4" />
                     ตอนเดียว (Single)
                   </button>
                   <button
-                    onClick={() => setChapterType("multi")}
+                    onClick={() => {
+                      if (uploadingChapter || uploadingProgress || multiUploadProcessing) return;
+                      setChapterType("multi");
+                    }}
+                    disabled={uploadingChapter || !!uploadingProgress || multiUploadProcessing}
                     className={cn(
                       "flex-1 px-4 py-3 rounded-lg border transition-colors flex items-center justify-center gap-2",
                       chapterType === "multi"
                         ? "bg-orange-500 text-white border-orange-500"
-                        : "bg-background border-border text-foreground hover:bg-muted"
+                        : "bg-background border-border text-foreground hover:bg-muted",
+                      (uploadingChapter || uploadingProgress || multiUploadProcessing) && "opacity-50 cursor-not-allowed"
                     )}>
                     <FileStack className="w-4 h-4" />
                     หลายตอน (Multi)
@@ -2359,7 +2831,11 @@ export default function EditMangaPage() {
                           setChapterFormData({ ...chapterFormData, title: e.target.value })
                         }
                         placeholder="ใส่ชื่อตอน (ว่างได้)"
-                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        disabled={uploadingChapter || !!uploadingProgress}
+                        className={cn(
+                          "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
+                          (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed"
+                        )}
                       />
                     </div>
                     <div>
@@ -2377,7 +2853,11 @@ export default function EditMangaPage() {
                         }
                         min="1"
                         step="0.5"
-                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        disabled={uploadingChapter || !!uploadingProgress}
+                        className={cn(
+                          "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
+                          (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed"
+                        )}
                       />
                     </div>
                     <div>
@@ -2394,7 +2874,11 @@ export default function EditMangaPage() {
                           })
                         }
                         min="0"
-                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        disabled={uploadingChapter || !!uploadingProgress}
+                        className={cn(
+                          "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
+                          (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed"
+                        )}
                       />
                     </div>
                     <div>
@@ -2409,7 +2893,11 @@ export default function EditMangaPage() {
                             status: e.target.value as "published" | "draft",
                           })
                         }
-                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20">
+                        disabled={uploadingChapter || !!uploadingProgress}
+                        className={cn(
+                          "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
+                          (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed"
+                        )}>
                         <option value="published">เผยแพร่</option>
                         <option value="draft">แบบร่าง</option>
                       </select>
@@ -2426,14 +2914,14 @@ export default function EditMangaPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (uploadingChapter) return;
+                            if (uploadingChapter || uploadingProgress) return;
                             setChapterImages([]);
                             setImagePreviews([]);
                           }}
-                          disabled={uploadingChapter}
+                          disabled={uploadingChapter || !!uploadingProgress}
                           className={cn(
                             "px-3 py-1.5 border border-red-500 rounded-lg text-sm font-medium transition-colors",
-                            uploadingChapter
+                            (uploadingChapter || uploadingProgress)
                               ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50"
                               : "bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:border-red-600"
                           )}>
@@ -2446,33 +2934,35 @@ export default function EditMangaPage() {
                     <div
                       className={cn(
                         "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
-                        uploadingChapter
+                        (uploadingChapter || uploadingProgress)
                           ? "border-muted cursor-not-allowed opacity-50"
                           : "border-border cursor-pointer hover:border-orange-500/50 hover:bg-orange-500/5"
                       )}
                       onDragOver={(e) => {
-                        if (uploadingChapter) return;
+                        if (uploadingChapter || uploadingProgress) return;
                         e.preventDefault();
                         e.stopPropagation();
                       }}
                       onDrop={(e) => {
-                        if (uploadingChapter) return;
+                        if (uploadingChapter || uploadingProgress) return;
                         e.preventDefault();
                         e.stopPropagation();
+                        const allowedExt = /\.(jpg|jpeg|png|webp)$/i;
                         const files = Array.from(e.dataTransfer.files).filter((file) =>
-                          file.type.startsWith("image/")
+                          file.type.startsWith("image/") || allowedExt.test(file.name)
                         );
                         handleImageUpload(files);
                       }}
                       onClick={() => {
-                        if (uploadingChapter) return;
+                        if (uploadingChapter || uploadingProgress) return;
                         const input = document.createElement("input");
                         input.type = "file";
                         input.multiple = true;
-                        input.accept = "image/*";
+                        input.accept = "image/jpeg,image/jpg,image/png,image/webp";
                         input.onchange = (e) => {
+                          const allowedExt = /\.(jpg|jpeg|png|webp)$/i;
                           const files = Array.from((e.target as HTMLInputElement).files || []).filter(
-                            (file) => file.type.startsWith("image/")
+                            (file) => file.type.startsWith("image/") || allowedExt.test(file.name)
                           );
                           handleImageUpload(files);
                         };
@@ -2480,7 +2970,7 @@ export default function EditMangaPage() {
                       }}>
                       <ImageIcon className="w-12 h-12 mx-auto mb-2 text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
-                        {uploadingChapter
+                        {(uploadingChapter || uploadingProgress)
                           ? "กำลังอัปโหลด... กรุณารอสักครู่"
                           : "คลิกเพื่อเพิ่มรูปภาพ หรือลากไฟล์มาวางที่นี่"}
                       </p>
@@ -2489,55 +2979,37 @@ export default function EditMangaPage() {
                     {/* Image Previews */}
                     {imagePreviews.length > 0 && (
                       <div className="mt-4 space-y-4">
-                        {/* Upload Progress */}
-                        {uploadingProgress && (
-                          <div className="bg-muted/50 border border-border rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-foreground">
-                                กำลังอัปโหลดรูปภาพ...
-                              </span>
-                              <span className="text-sm text-muted-foreground">
-                                {uploadingProgress.current} / {uploadingProgress.total}
-                              </span>
-                            </div>
-                            <div className="w-full bg-background rounded-full h-2 overflow-hidden">
-                              <div
-                                className="bg-orange-500 h-full transition-all duration-300"
-                                style={{
-                                  width: `${(uploadingProgress.current / uploadingProgress.total) * 100}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
                         
                         <div className={cn(
                           "grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-96 overflow-y-auto p-2",
-                          uploadingChapter && "pointer-events-none opacity-60"
+                          (uploadingChapter || uploadingProgress) && "pointer-events-none opacity-60"
                         )}>
                           {imagePreviews.map((preview, index) => {
                             const fileName = chapterImages[index]?.name || `image-${index + 1}`;
                             const truncatedFileName = truncateFileName(fileName, 12);
                             const isDragging = draggedIndex === index;
-                            const isUploading = uploadingChapter && uploadingProgress && index < uploadingProgress.current;
+                            const isCurrentlyUploading = uploadingChapter && uploadingProgress && index === uploadingProgress.current;
+                            const isUploaded = uploadedPages.has(index);
+                            const isUploading = uploadingChapter || !!uploadingProgress;
                             
                             return (
                               <div
                                 key={index}
-                                draggable={!uploadingChapter}
-                                onDragStart={() => !uploadingChapter && handleDragStart(index)}
-                                onDragOver={(e) => !uploadingChapter && handleDragOver(e, index)}
-                                onDrop={(e) => !uploadingChapter && handleDrop(e, index)}
+                                draggable={!isUploading}
+                                onDragStart={() => !isUploading && handleDragStart(index)}
+                                onDragOver={(e) => !isUploading && handleDragOver(e, index)}
+                                onDrop={(e) => !isUploading && handleDrop(e, index)}
                                 className={cn(
                                   "relative group",
-                                  uploadingChapter ? "cursor-not-allowed" : "cursor-move",
+                                  isUploading ? "cursor-not-allowed" : "cursor-move",
                                   isDragging && "opacity-50 scale-95"
                                 )}>
                                 {/* Image container - fixed height, full image visible */}
                                 <div className={cn(
                                   "w-full aspect-[3/4] rounded-lg overflow-hidden bg-muted border transition-all relative",
                                   isDragging ? "border-orange-500 border-2" : "border-border",
-                                  isUploading && "ring-2 ring-orange-500"
+                                  isUploaded && "ring-2 ring-green-500 border-green-500",
+                                  isCurrentlyUploading && "ring-2 ring-orange-500"
                                 )}>
                                   <img
                                     src={preview}
@@ -2545,16 +3017,25 @@ export default function EditMangaPage() {
                                     className="w-full h-full object-contain pointer-events-none"
                                     draggable={false}
                                   />
-                                  {/* Uploading overlay */}
-                                  {isUploading && (
-                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                  {/* กำลังอัพโหลดหน้านี้ */}
+                                  {isCurrentlyUploading && (
+                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                                       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                                    </div>
+                                  )}
+                                  {/* อัพโหลดสำเร็จ — ติ๊กถูกสีเขียว */}
+                                  {isUploaded && !isCurrentlyUploading && (
+                                    <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                                      <CheckCircle className="w-8 h-8 text-green-500 drop-shadow-lg" />
                                     </div>
                                   )}
                                 </div>
                                 {/* Page number badge - with hover theme */}
-                                <div className="absolute top-1 left-1 bg-orange-500/90 hover:bg-orange-500 text-white text-xs font-medium px-1.5 py-0.5 rounded transition-colors pointer-events-none">
-                                  {index + 1}
+                                <div className={cn(
+                                  "absolute top-1 left-1 text-white text-xs font-medium px-1.5 py-0.5 rounded transition-colors pointer-events-none",
+                                  isUploaded ? "bg-green-500/90" : "bg-orange-500/90 hover:bg-orange-500"
+                                )}>
+                                  {isUploaded ? "✓ " : ""}{index + 1}
                                 </div>
                                 {/* File name badge - right side */}
                                 <div 
@@ -2563,7 +3044,7 @@ export default function EditMangaPage() {
                                   {truncatedFileName}
                                 </div>
                                 {/* Delete button - hidden when uploading */}
-                                {!uploadingChapter && (
+                                {!isUploading && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -2587,6 +3068,203 @@ export default function EditMangaPage() {
                 </>
               ) : (
                 <>
+                  {/* Multi Chapter Upload Results */}
+                  {multiChapterProgress && (
+                    <div className="bg-gradient-to-r from-green-500/10 to-green-600/10 border-2 border-green-500/50 rounded-lg p-4 shadow-lg mb-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle className="w-5 h-5 text-green-500" />
+                        <p className="text-sm text-muted-foreground">
+                          ZIP นี้มี{" "}
+                          <span className="font-semibold text-green-500">
+                            {multiChapterProgress.total}
+                          </span>{" "}
+                          ตอน — ประมวลผลแล้ว{" "}
+                          <span className="font-semibold text-green-500">
+                            {multiChapterProgress.current}
+                          </span>{" "}
+                          /{" "}
+                          <span className="font-semibold">
+                            {multiChapterProgress.total}
+                          </span>{" "}
+                          ตอน
+                        </p>
+                      </div>
+                      
+                      {/* Chapter Results List - Horizontal Carousel */}
+                      {multiChapterProgress.results.length > 0 && (
+                        <div className="relative">
+                          <div className="flex items-center gap-2">
+                            {/* Previous Button */}
+                            {multiChapterProgress.results.length > 2 && (
+                              <button
+                                onClick={() => setCarouselIndex(Math.max(0, carouselIndex - 1))}
+                                disabled={carouselIndex === 0}
+                                className={cn(
+                                  "p-1.5 rounded-lg transition-colors flex-shrink-0",
+                                  carouselIndex === 0
+                                    ? "opacity-50 cursor-not-allowed text-muted-foreground"
+                                    : "hover:bg-muted text-foreground"
+                                )}
+                              >
+                                <ChevronLeft className="w-5 h-5" />
+                              </button>
+                            )}
+                            
+                            {/* Results Container */}
+                            <div className="flex-1 overflow-hidden">
+                              <div
+                                className="flex gap-3 transition-transform duration-300 ease-in-out"
+                                style={{
+                                  transform: `translateX(-${carouselIndex * (100 / Math.min(2, multiChapterProgress.results.length))}%)`,
+                                }}
+                              >
+                                {multiChapterProgress.results.map((result, index) => (
+                                  <div
+                                    key={index}
+                                    className={cn(
+                                      "flex-shrink-0 w-full sm:w-1/2 p-3 rounded-lg text-sm border",
+                                      result.status === "success" && "bg-green-500/10 border-green-500/30",
+                                      result.status === "skipped" && "bg-yellow-500/10 border-yellow-500/30",
+                                      result.status === "error" && "bg-red-500/10 border-red-500/30",
+                                      result.status === "processing" && "bg-orange-500/10 border-orange-500/30"
+                                    )}
+                                    style={{
+                                      width: multiChapterProgress.results.length > 2 ? 'calc(50% - 0.375rem)' : '100%',
+                                    }}
+                                  >
+                                    <div className="flex flex-col gap-2">
+                                      <div className="flex items-start gap-2">
+                                        <div className="flex-shrink-0 mt-0.5">
+                                          {result.status === "success" && (
+                                            <CheckCircle className="w-4 h-4 text-green-500" />
+                                          )}
+                                          {result.status === "skipped" && (
+                                            <X className="w-4 h-4 text-yellow-500" />
+                                          )}
+                                          {result.status === "error" && (
+                                            <X className="w-4 h-4 text-red-500" />
+                                          )}
+                                          {result.status === "processing" && (
+                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-500"></div>
+                                          )}
+                                          {result.status === "pending" && (
+                                            <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30"></div>
+                                          )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p
+                                            className={cn(
+                                              "font-medium truncate",
+                                              result.status === "success" && "text-green-500",
+                                              result.status === "skipped" && "text-yellow-500",
+                                              result.status === "error" && "text-red-500",
+                                              result.status === "processing" && "text-orange-500",
+                                              result.status === "pending" && "text-muted-foreground"
+                                            )}
+                                          >
+                                            {result.title}
+                                          </p>
+                                          {result.message && (
+                                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                                              {result.message}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Per-chapter image upload progress */}
+                                      {typeof result.totalPages === "number" &&
+                                        result.totalPages > 0 && (
+                                          <div className="space-y-1">
+                                            <div className="flex justify-between text-[11px] text-muted-foreground">
+                                              <span>
+                                                รูปภาพ:{" "}
+                                                <span className="font-medium text-foreground">
+                                                  {result.uploadedPages ?? 0}
+                                                </span>{" "}
+                                                /{" "}
+                                                <span className="font-medium">
+                                                  {result.totalPages}
+                                                </span>
+                                              </span>
+                                              <span className="font-medium">
+                                                {Math.round(
+                                                  ((result.uploadedPages ?? 0) /
+                                                    result.totalPages) *
+                                                    100,
+                                                )}
+                                                %
+                                              </span>
+                                            </div>
+                                            <div className="w-full bg-background/60 rounded-full h-2 overflow-hidden">
+                                              <div
+                                                className={cn(
+                                                  "h-full rounded-full transition-all duration-300 ease-out",
+                                                  result.status === "error"
+                                                    ? "bg-red-500"
+                                                    : result.status === "skipped"
+                                                      ? "bg-yellow-500"
+                                                      : "bg-gradient-to-r from-orange-400 via-orange-500 to-green-500",
+                                                )}
+                                                style={{
+                                                  width: `${
+                                                    ((result.uploadedPages ?? 0) /
+                                                      result.totalPages) *
+                                                    100
+                                                  }%`,
+                                                }}
+                                              />
+                                            </div>
+                                          </div>
+                                        )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Next Button */}
+                            {multiChapterProgress.results.length > 2 && (
+                              <button
+                                onClick={() => setCarouselIndex(Math.min(
+                                  Math.ceil(multiChapterProgress.results.length / 2) - 1,
+                                  carouselIndex + 1
+                                ))}
+                                disabled={carouselIndex >= Math.ceil(multiChapterProgress.results.length / 2) - 1}
+                                className={cn(
+                                  "p-1.5 rounded-lg transition-colors flex-shrink-0",
+                                  carouselIndex >= Math.ceil(multiChapterProgress.results.length / 2) - 1
+                                    ? "opacity-50 cursor-not-allowed text-muted-foreground"
+                                    : "hover:bg-muted text-foreground"
+                                )}
+                              >
+                                <ChevronRight className="w-5 h-5" />
+                              </button>
+                            )}
+                          </div>
+                          
+                          {/* Carousel Indicators */}
+                          {multiChapterProgress.results.length > 2 && (
+                            <div className="flex justify-center gap-1.5 mt-3">
+                              {Array.from({ length: Math.ceil(multiChapterProgress.results.length / 2) }).map((_, index) => (
+                                <button
+                                  key={index}
+                                  onClick={() => setCarouselIndex(index)}
+                                  className={cn(
+                                    "w-2 h-2 rounded-full transition-all",
+                                    carouselIndex === index
+                                      ? "bg-orange-500 w-6"
+                                      : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                                  )}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Multi Chapter Upload Instructions */}
                   <div className="bg-muted/30 border border-border rounded-lg p-6 space-y-4">
                     <h3 className="text-sm font-semibold text-foreground">
@@ -2661,7 +3339,7 @@ export default function EditMangaPage() {
                       <label
                         htmlFor="zip-file-input"
                         className={cn(
-                          "flex items-center justify-between w-full px-4 py-2.5 border border-border rounded-lg cursor-pointer transition-colors",
+                          "flex items-center justify-between w-full px-4 py-2.5 border border-border rounded-lg transition-colors cursor-pointer",
                           zipFile
                             ? "bg-muted/50 border-orange-500/50"
                             : "bg-background hover:bg-muted/30"
@@ -2684,57 +3362,105 @@ export default function EditMangaPage() {
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-border flex justify-end gap-4">
-              <button
-                onClick={() => {
-                  if (uploadingChapter) return;
-                  setShowAddChapterModal(false);
-                  setEditingChapterId(null);
-                  setImagePreviews([]);
-                  setChapterImages([]);
-                  setZipFile(null);
-                  setZipFileName("");
-                  setUploadingProgress(null);
-                  setChapterFormData({
-                    title: "",
-                    number: 1,
-                    price: 0,
-                    status: "published",
-                  });
-                }}
-                disabled={uploadingChapter}
-                className={cn(
-                  "px-6 py-2.5 border border-border rounded-lg transition-colors",
-                  uploadingChapter
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:bg-muted"
-                )}>
-                ยกเลิก
-              </button>
-              <button
-                onClick={
-                  editingChapterId
-                    ? handleUpdateChapter
-                    : chapterType === "single"
-                      ? handleCreateChapter
-                      : handleUploadMultiChapters
-                }
-                disabled={
-                  uploadingChapter ||
-                  (editingChapterId
-                    ? imagePreviews.length === 0
-                    : chapterType === "single"
-                      ? chapterImages.length === 0
-                      : !zipFile)
-                }
-                className="px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                {uploadingChapter
-                  ? editingChapterId
-                    ? "กำลังอัปเดต..."
-                    : "กำลังสร้าง..."
-                  : editingChapterId
-                    ? "อัปเดต"
-                    : "สร้าง"}
-              </button>
+              {chapterType === "multi" && (multiChapterProgress || multiUploadProcessing) ? (
+                // โหมดอัปโหลดหลายตอน: กำลังทำงานหรือเสร็จแล้ว
+                <button
+                  onClick={() => {
+                    if (multiUploadProcessing) return; // ยังอัพโหลดอยู่ ห้ามกด
+                    setShowAddChapterModal(false);
+                    setEditingChapterId(null);
+                    setImagePreviews([]);
+                    setChapterImages([]);
+                    setZipFile(null);
+                    setZipFileName("");
+                    setUploadingProgress(null);
+                    setUploadedPages(new Set());
+                    setMultiChapterProgress(null);
+                    setMultiUploadProcessing(false);
+                    setMultiUploadStep(0);
+                    setCarouselIndex(0);
+                    setChapterType("single");
+                    setChapterFormData({
+                      title: "",
+                      number: 1,
+                      price: 0,
+                      status: "published",
+                    });
+                  }}
+                  disabled={multiUploadProcessing || uploadingChapter}
+                  className={cn(
+                    "px-6 py-2.5 rounded-lg transition-colors",
+                    multiUploadProcessing || uploadingChapter
+                      ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
+                      : "bg-green-500 text-white hover:bg-green-600"
+                  )}
+                >
+                  {multiUploadProcessing || uploadingChapter ? "กำลังอัพโหลด..." : "เสร็จสิ้น"}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      if (uploadingChapter || uploadingProgress) return;
+                      setShowAddChapterModal(false);
+                      setEditingChapterId(null);
+                      setImagePreviews([]);
+                      setChapterImages([]);
+                      setZipFile(null);
+                      setZipFileName("");
+                      setUploadingProgress(null);
+                      setUploadedPages(new Set());
+                      setMultiChapterProgress(null);
+                      setMultiUploadProcessing(false);
+                      setMultiUploadStep(0);
+                      setCarouselIndex(0);
+                      setChapterFormData({
+                        title: "",
+                        number: 1,
+                        price: 0,
+                        status: "published",
+                      });
+                    }}
+                    disabled={uploadingChapter || !!uploadingProgress}
+                    className={cn(
+                      "px-6 py-2.5 border border-border rounded-lg transition-colors",
+                      uploadingChapter || uploadingProgress
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:bg-muted"
+                    )}>
+                    ยกเลิก
+                  </button>
+                  <button
+                    onClick={
+                      editingChapterId
+                        ? handleUpdateChapter
+                        : chapterType === "single"
+                          ? handleCreateChapter
+                          : handleUploadMultiChapters
+                    }
+                    disabled={
+                      uploadingChapter ||
+                      (editingChapterId
+                        ? imagePreviews.length === 0
+                        : chapterType === "single"
+                          ? chapterImages.length === 0
+                          : !zipFile)
+                    }
+                    className="px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    {uploadingChapter
+                      ? editingChapterId
+                        ? "กำลังอัปเดต..."
+                        : chapterType === "single"
+                          ? "กำลังสร้าง..."
+                          : "กำลังอัปโหลดหลายตอน..."
+                      : editingChapterId
+                        ? "อัปเดต"
+                        : chapterType === "single"
+                          ? "สร้าง"
+                          : "อัปโหลดหลายตอน"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

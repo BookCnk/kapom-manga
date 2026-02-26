@@ -165,16 +165,6 @@ export default function UserMenu() {
           </div>
 
           <div className="py-1">
-            {user.username && (
-              <Link
-                href={`/profile/${user.username}`}
-                className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-                onClick={() => setIsOpen(false)}>
-                <User className="w-4 h-4" />
-                โปรไฟล์ของฉัน
-              </Link>
-            )}
-
             <Link
               href="/writer"
               className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
@@ -201,8 +191,7 @@ export default function UserMenu() {
               ตั้งค่า
             </Link>
 
-            {(user.role === UserRole.TRANSLATOR ||
-              user.role === UserRole.ADMIN) && (
+            {user.role === UserRole.ADMIN && (
               <Link
                 href="/admin"
                 className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"

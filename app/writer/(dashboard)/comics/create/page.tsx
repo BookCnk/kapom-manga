@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Save, Upload, X, Image as ImageIcon, Plus } from "lucide-react";
 import Link from "next/link";
-import { MangaStatus, Visibility } from "@/generated/prisma/enums";
+import { MangaStatus, Visibility } from "@/lib/types/client-enums";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import AuthGuard from "@/components/writer/AuthGuard";
@@ -184,22 +184,25 @@ export default function CreateMangaPage() {
     }
   };
 
-  // อัพโหลดรูปปกไป S3
+  // อัพโหลดรูปปกไป S3 (โครงสร้าง: manga/{slug}/cover/)
   const uploadCoverToS3 = async (file: File, previewUrl: string) => {
     try {
       setCheckingNsfw(true);
       const sessionToken = localStorage.getItem("session_token") || "";
       
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("folder", "manga-covers");
+      // ใช้โครงสร้างโฟลเดอร์ตาม slug ของมังงะ
+      const coverFolder = formData.slug ? `manga/${formData.slug}/cover` : "manga-covers";
+      
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", file);
+      uploadFormData.append("folder", coverFolder);
 
       const response = await fetch("/api/uploads/image", {
         method: "POST",
         headers: {
           "x-session-token": sessionToken,
         },
-        body: formData,
+        body: uploadFormData,
       });
 
       const data = await response.json();
