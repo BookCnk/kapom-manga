@@ -12,9 +12,15 @@ import type { UserRole } from "@/lib/types/client-enums";
 type User = {
   id: number;
   email: string;
+  username?: string;
   name?: string;
+  bio?: string;
+  facebookUrl?: string;
+  tiktokUrl?: string;
   role: UserRole;
   avatarUrl?: string;
+  bannerUrl?: string;
+  createdAt?: string;
 };
 
 type AuthContextType = {

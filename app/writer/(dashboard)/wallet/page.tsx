@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { HelpCircle } from "lucide-react";
-// Date formatting utilities
 
+// Date formatting utilities
 type WalletData = {
   wallet: {
     balance: number;
@@ -255,7 +255,8 @@ export default function WriterWalletPage() {
             </h2>
             <a
               href="#"
-              className="text-sm text-purple-600 hover:text-purple-700">
+              className="text-sm text-purple-600 hover:text-purple-700"
+            >
               ข้อมูลเพิ่มเติม...
             </a>
           </div>
@@ -269,15 +270,13 @@ export default function WriterWalletPage() {
                 setSelectedMonth(month);
                 setSalesPage(1);
               }}
-              className="px-3 py-2 border border-border rounded-lg text-sm">
-              {Array.from({ length: 12 }, (_, i) => {
-                const date = new Date(selectedYear, i, 1);
-                return (
-                  <option key={i} value={`${selectedYear}-${i + 1}`}>
-                    {getThaiMonth(i + 1)} {selectedYear + 543}
-                  </option>
-                );
-              })}
+              className="px-3 py-2 border border-border rounded-lg text-sm"
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i} value={`${selectedYear}-${i + 1}`}>
+                  {getThaiMonth(i + 1)} {selectedYear + 543}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -302,7 +301,8 @@ export default function WriterWalletPage() {
                     {paginatedSales.map((tx, index) => (
                       <tr
                         key={tx.id}
-                        className="border-b border-border hover:bg-muted/30">
+                        className="border-b border-border hover:bg-muted/30"
+                      >
                         <td className="p-2">{salesStart + index + 1}</td>
                         <td className="p-2">{formatDate(tx.date)}</td>
                         <td className="p-2">{tx.type}</td>
@@ -329,7 +329,8 @@ export default function WriterWalletPage() {
                     <button
                       onClick={() => setSalesPage((p) => Math.max(1, p - 1))}
                       disabled={salesPage === 1}
-                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50">
+                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50"
+                    >
                       ก่อนหน้า
                     </button>
                     <span className="text-sm text-muted-foreground">
@@ -342,7 +343,8 @@ export default function WriterWalletPage() {
                         )
                       }
                       disabled={salesPage === totalSalesPages}
-                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50">
+                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50"
+                    >
                       ถัดไป
                     </button>
                   </div>
@@ -361,7 +363,8 @@ export default function WriterWalletPage() {
             </h2>
             <a
               href="#"
-              className="text-sm text-purple-600 hover:text-purple-700">
+              className="text-sm text-purple-600 hover:text-purple-700"
+            >
               ข้อมูลเพิ่มเติม...
             </a>
           </div>
@@ -386,7 +389,8 @@ export default function WriterWalletPage() {
                     {paginatedSupport.map((tx, index) => (
                       <tr
                         key={tx.id}
-                        className="border-b border-border hover:bg-muted/30">
+                        className="border-b border-border hover:bg-muted/30"
+                      >
                         <td className="p-2">{supportStart + index + 1}</td>
                         <td className="p-2">{formatDate(tx.date)}</td>
                         <td className="p-2">{tx.readerProfile}</td>
@@ -412,7 +416,8 @@ export default function WriterWalletPage() {
                         setSupportPage((p) => Math.max(1, p - 1))
                       }
                       disabled={supportPage === 1}
-                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50">
+                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50"
+                    >
                       ก่อนหน้า
                     </button>
                     <span className="text-sm text-muted-foreground">
@@ -425,7 +430,8 @@ export default function WriterWalletPage() {
                         )
                       }
                       disabled={supportPage === totalSupportPages}
-                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50">
+                      className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50"
+                    >
                       ถัดไป
                     </button>
                   </div>
@@ -460,7 +466,8 @@ export default function WriterWalletPage() {
                   {data.readCoinTransfers.map((tx) => (
                     <tr
                       key={tx.id}
-                      className="border-b border-border hover:bg-muted/30">
+                      className="border-b border-border hover:bg-muted/30"
+                    >
                       <td className="p-2">{formatDate(tx.date)}</td>
                       <td className="p-2">{formatCurrency(tx.amount)}</td>
                       <td className="p-2">{tx.status}</td>
@@ -502,7 +509,8 @@ export default function WriterWalletPage() {
                     {paginatedWithdrawals.map((tx, index) => (
                       <tr
                         key={tx.id}
-                        className="border-b border-border hover:bg-muted/30">
+                        className="border-b border-border hover:bg-muted/30"
+                      >
                         <td className="p-2">{withdrawalStart + index + 1}</td>
                         <td className="p-2">{tx.transactionId}</td>
                         <td className="p-2">{formatDate(tx.date)}</td>
@@ -512,7 +520,8 @@ export default function WriterWalletPage() {
                               tx.status === "เสร็จสิ้น"
                                 ? "bg-green-100 text-green-800"
                                 : "bg-yellow-100 text-yellow-800"
-                            }`}>
+                            }`}
+                          >
                             {tx.status}
                           </span>
                         </td>
@@ -529,7 +538,8 @@ export default function WriterWalletPage() {
                         <td className="p-2">
                           <a
                             href="#"
-                            className="text-purple-600 hover:text-purple-700 text-xs">
+                            className="text-purple-600 hover:text-purple-700 text-xs"
+                          >
                             ดูข้อมูลเพิ่มเติม
                           </a>
                         </td>
@@ -546,7 +556,8 @@ export default function WriterWalletPage() {
                       setWithdrawalPage((p) => Math.max(1, p - 1))
                     }
                     disabled={withdrawalPage === 1}
-                    className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50">
+                    className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50"
+                  >
                     ก่อนหน้า
                   </button>
                   <span className="text-sm text-muted-foreground">
@@ -559,7 +570,8 @@ export default function WriterWalletPage() {
                       )
                     }
                     disabled={withdrawalPage === totalWithdrawalPages}
-                    className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50">
+                    className="px-3 py-1 text-sm border border-border rounded hover:bg-muted disabled:opacity-50"
+                  >
                     ถัดไป
                   </button>
                 </div>
@@ -571,3 +583,4 @@ export default function WriterWalletPage() {
     </div>
   );
 }
+

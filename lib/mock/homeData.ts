@@ -31,9 +31,11 @@ export type MangaCard = {
   // badges
   isNew?: boolean; // โชว์ UP
   tags?: string[]; // เช่น ["Exclusive"]
-  genre: MangaGenre;
+  genre: MangaGenre; // genre หลัก (สำหรับ backward compatibility)
+  genres?: string[]; // array ของ genre names (สูงสุด 2)
   author?: string; // ชื่อผู้เขียน
   translator?: string; // ชื่อคนแปล
+  creatorUsername?: string; // username ของผู้สร้าง (ใช้สำหรับลิงก์ไปที่ profile)
 };
 
 export type HomePageData = {

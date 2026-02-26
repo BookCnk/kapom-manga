@@ -29,7 +29,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased selection:bg-orange-200 selection:text-orange-900">
+      <body className="antialiased selection:bg-orange-200 selection:text-orange-900 flex flex-col min-h-screen">
         <Providers>
           <Suspense fallback={null}>
             <TopLoader />

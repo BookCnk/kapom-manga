@@ -50,9 +50,11 @@ export default function SearchResultCard({ item }: Props) {
   const primaryCreator = item.author ?? item.translator ?? "";
   const secondaryCreator =
     item.author && item.translator ? item.translator : undefined;
-  const creatorSlug = primaryCreator ? encodeURIComponent(primaryCreator) : "";
-  // แนวเรื่อง (genre) แยกจาก tag: นักเขียนกำหนดได้สูงสุด 2 แนว แต่ UI ตรงนี้ใช้เฉพาะข้อมูล genre จากฐานข้อมูลแนวเรื่องเท่านั้น
-  const categoryNames = [item.genre].filter(Boolean).slice(0, 2);
+  const creatorUsername = item.creatorUsername;
+  // แนวเรื่อง (genre): ใช้ genres array ถ้ามี ไม่เช่นนั้นใช้ genre เดียว
+  const categoryNames = (item.genres && item.genres.length > 0)
+    ? item.genres.slice(0, 2)
+    : (item.genre ? [item.genre] : []);
   const hashTags = item.tags ?? [];
   const [hasImageError, setHasImageError] = useState(false);
 
@@ -63,41 +65,42 @@ export default function SearchResultCard({ item }: Props) {
 
   const handleCreatorClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!creatorSlug) return;
-    router.push(`/author/${creatorSlug}`);
+    if (!creatorUsername) return;
+    window.open(`/profile/${creatorUsername}`, "_blank", "noopener,noreferrer");
   };
 
   return (
     <div
-      className="group flex flex-col p-3 sm:p-4 rounded-2xl border border-border bg-card hover:border-orange-500/60 transition-colors overflow-hidden shadow-sm hover:shadow-md"
+      className="group flex flex-col p-4 sm:p-5 rounded-2xl border border-border bg-card hover:border-orange-500/60 transition-colors overflow-hidden shadow-sm hover:shadow-md"
     >
       {/* แถวบน: รูป + ข้อมูลเรื่อง */}
-      <div className="flex gap-4 items-start">
+      <div className="flex gap-4 sm:gap-5 items-start">
         <div
-          className="w-24 h-32 sm:w-28 sm:h-36 flex-shrink-0 overflow-hidden bg-muted cursor-pointer rounded-lg"
+          className="w-28 h-36 sm:w-32 sm:h-44 flex-shrink-0 overflow-hidden bg-muted cursor-pointer rounded-lg"
           onClick={handleCardClick}
         >
           {hasImageError || !item.coverImage ? (
-            <div className="h-full w-full flex flex-col items-center justify-center bg-muted/80 text-[10px] text-muted-foreground select-none">
-              <div className="w-8 h-8 rounded-full border border-border flex items-center justify-center mb-1 relative">
-                <CameraOff className="w-4 h-4" />
+            <div className="h-full w-full flex flex-col items-center justify-center bg-muted/80 text-xs text-muted-foreground select-none">
+              <div className="w-10 h-10 rounded-full border border-border flex items-center justify-center mb-1.5 relative">
+                <CameraOff className="w-5 h-5" />
                 <div className="absolute inset-0 rounded-full border border-border/70 border-dashed" />
               </div>
-              <span className="text-[10px] tracking-tight">No Image</span>
+              <span className="text-[11px] tracking-tight">No Image</span>
             </div>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={item.coverImage}
               alt={item.title}
+              loading="lazy"
               className="h-full w-full object-cover"
               onError={() => setHasImageError(true)}
             />
           )}
         </div>
-        <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex-1 min-w-0 space-y-2.5">
           {/* ชื่อเรื่อง (กดเข้าอ่านได้) */}
-          <h2 className="text-[15px] font-semibold text-foreground line-clamp-2">
+          <h2 className="text-base sm:text-lg font-semibold text-foreground line-clamp-2 leading-snug">
             <button
               type="button"
               onClick={handleCardClick}
@@ -109,15 +112,19 @@ export default function SearchResultCard({ item }: Props) {
 
           {/* Author + หมวดหมู่หลัก (ไม่เกิน 2) */}
           {(primaryCreator || categoryNames.length > 0) && (
-            <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
               {primaryCreator && (
-                <button
-                  type="button"
-                  onClick={handleCreatorClick}
-                  className="hover:text-orange-400 transition-colors"
-                >
-                  {primaryCreator}
-                </button>
+                creatorUsername ? (
+                  <button
+                    type="button"
+                    onClick={handleCreatorClick}
+                    className="hover:text-orange-400 transition-colors cursor-pointer"
+                  >
+                    {primaryCreator}
+                  </button>
+                ) : (
+                  <span>{primaryCreator}</span>
+                )
               )}
               {secondaryCreator && (
                 <>
@@ -134,7 +141,7 @@ export default function SearchResultCard({ item }: Props) {
           )}
 
           {/* meta: ตอน + วิว + เวลา อยู่ในกล่องพื้นหลังบาง ๆ ใต้ชื่อเรื่อง */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-full bg-muted/50 px-3 py-1 text-xs text-muted-foreground border border-border/60 transition-colors group-hover:bg-orange-500/10 group-hover:text-orange-400 group-hover:border-orange-500/60">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-full bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground border border-border/60 transition-colors group-hover:bg-orange-500/10 group-hover:text-orange-400 group-hover:border-orange-500/60">
             <div className="flex items-center gap-3">
               <span className="inline-flex items-center gap-1">
                 <BookOpen className="w-4 h-4" />
@@ -147,15 +154,15 @@ export default function SearchResultCard({ item }: Props) {
             </div>
 
             {formatTimeAgoThai(item.updatedAt, item.latestUpdatedLabel) && (
-              <span className="text-[11px] text-muted-foreground/80 whitespace-nowrap transition-colors group-hover:text-orange-400">
-                อัปเดตตอนล่าสุด{" "}
+              <span className="text-xs text-muted-foreground/80 whitespace-nowrap transition-colors group-hover:text-orange-400">
+                {" "}
                 {formatTimeAgoThai(item.updatedAt, item.latestUpdatedLabel)}
               </span>
             )}
           </div>
 
-          {/* คำอธิบายสั้น ๆ อยู่ด้านล่างสุดของคอลัมน์ข้อมูล (เพิ่มได้ 3 บรรทัดเพื่อบาลานซ์กับรูป) */}
-          <p className="text-[13px] text-muted-foreground line-clamp-3">
+          {/* คำอธิบายสั้น ๆ อยู่ด้านล่างสุดของคอลัมน์ข้อมูล */}
+          <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
             {item.description}
           </p>
         </div>
@@ -163,13 +170,13 @@ export default function SearchResultCard({ item }: Props) {
 
       {/* เส้นคั่น + แถวล่าง: แท็ก # จากนักเขียน แยกออกมาข้างล่างทั้งหมด */}
       {hashTags.length > 0 && (
-        <div className="mt-2 pt-2 mx-1 border-t border-orange-500/40 group-hover:border-orange-500/70 overflow-x-auto scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent rounded-xl pb-1 px-1 transition-colors">
-          <div className="flex gap-1.5 text-[11px] text-muted-foreground min-w-max pr-1">
+        <div className="mt-3 pt-2.5 mx-1 border-t border-orange-500/40 group-hover:border-orange-500/70 overflow-x-auto scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent rounded-xl pb-1 px-1 transition-colors">
+          <div className="flex gap-2 text-xs text-muted-foreground min-w-max pr-1">
             {hashTags.map((t) => (
               <Link
                 key={t}
                 href={`/search?q=${encodeURIComponent(t)}`}
-                className="px-2 py-0.5 rounded-full bg-muted/40 border border-border/60 whitespace-nowrap hover:bg-orange-500/10 hover:text-orange-400 transition-colors"
+                className="px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/60 whitespace-nowrap hover:bg-orange-500/10 hover:text-orange-400 transition-colors"
               >
                 #{t}
               </Link>

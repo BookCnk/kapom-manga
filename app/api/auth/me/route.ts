@@ -38,9 +38,14 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         email: true,
+        username: true,
         name: true,
+        bio: true,
+        facebookUrl: true,
+        tiktokUrl: true,
         role: true,
         avatarUrl: true,
+        bannerUrl: true,
         createdAt: true,
       },
     });

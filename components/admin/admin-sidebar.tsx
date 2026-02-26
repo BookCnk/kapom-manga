@@ -176,13 +176,15 @@ function SidebarContent({
                   <Wallet className="w-4 h-4" />
                   <span>ยอดเหรียญ: {walletBalance !== null ? formatCurrency(walletBalance) : "0.00"} บาท</span>
                 </div>
-                <Link
-                  href="/profile"
-                  className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-                  onClick={() => setIsUserMenuOpen(false)}>
-                  <User className="w-4 h-4" />
-                  โปรไฟล์
-                </Link>
+                {user.username && (
+                  <Link
+                    href={`/profile/${user.username}`}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                    onClick={() => setIsUserMenuOpen(false)}>
+                    <User className="w-4 h-4" />
+                    โปรไฟล์
+                  </Link>
+                )}
                 <Link
                   href="/settings"
                   className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"

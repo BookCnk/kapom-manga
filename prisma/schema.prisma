@@ -66,10 +66,15 @@ enum TranslatorInviteStatus {
 model User {
   id                        Int                @id @default(autoincrement())
   email                     String             @unique
+  username                  String?            @unique
   name                      String?
   passwordHash              String?
   role                      UserRole           @default(USER)
+  bio                       String?
+  facebookUrl                String?
+  tiktokUrl                  String?
   avatarUrl                 String?
+  bannerUrl                 String?
   mangas                    Manga[]            @relation("UserMangas")
   bookmarks                 Bookmark[]
   readingHistory            ReadingHistory[]
@@ -82,6 +87,7 @@ model User {
   sentTranslatorInvites     TranslatorInvite[] @relation("TranslatorInviter")
   receivedTranslatorInvites TranslatorInvite[] @relation("TranslatorInvitee")
   reviewedTranslatorInvites TranslatorInvite[] @relation("TranslatorInviteReviewer")
+  notifications             Notification[]     @relation("NotificationRecipient")
   createdAt                 DateTime           @default(now())
   updatedAt                 DateTime           @updatedAt
 }
@@ -114,6 +120,7 @@ model Manga {
   readingHistory ReadingHistory[]
   likes          Like[]
   comments       Comment[]
+  notifications  Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -250,6 +257,7 @@ model Comment {
 
   parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
   replies Comment[] @relation("CommentThread")
+  notifications Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -362,4 +370,30 @@ model TranslatorInvite {
   @@index([inviteeUserId, status])
   @@index([adminReviewerId, status])
   @@index([expiresAt])
+}
+
+enum NotificationType {
+  COMMENT_ON_BOOKMARKED_MANGA
+  COMMENT_ON_MY_MANGA
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  commentId Int?
+  mangaId   Int?
+
+  user    User    @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  manga   Manga?   @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([mangaId])
+  @@index([commentId])
 }

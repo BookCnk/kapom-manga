@@ -1,38 +1,59 @@
 // app/writer/layout.tsx
-import type { Metadata } from "next";
-import { Suspense } from "react";
-import {
-  AdminSidebarDesktop,
-  AdminSidebarMobile,
-} from "@/components/admin/admin-sidebar";
-import { AdminLayoutContent } from "@/components/admin/admin-layout-content";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Writer Dashboard - RTN",
-  description: "แดชบอร์ดนักเขียน",
-};
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { UserRole } from "@/lib/types/client-enums";
 
+// Layout หลักของ /writer
+// - บังคับให้ทุกหน้าต้องล็อกอิน
+// - USER ธรรมดา (ยังไม่เป็นนักเขียน) จะถูกส่งไปหน้า /writer/apply เสมอ
+// - หน้าดาชบอร์ดนักเขียนจริง ๆ ใช้ layout แยกใน route group (dashboard) แทน
 export default function WriterLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Desktop sidebar */}
-      <Suspense fallback={null}>
-        <AdminSidebarDesktop />
-      </Suspense>
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
 
-      {/* Main */}
-      <AdminLayoutContent>
-        {/* Mobile header */}
-        <Suspense fallback={null}>
-          <AdminSidebarMobile />
-        </Suspense>
+  useEffect(() => {
+    if (loading) return;
 
-        <div className="p-6 md:p-8">{children}</div>
-      </AdminLayoutContent>
-    </div>
-  );
+    // ยังไม่ล็อกอิน → ส่งไปหน้า login
+    if (!user) {
+      const redirectPath = encodeURIComponent(pathname || "/");
+      router.replace(`/login?redirect=${redirectPath}`);
+      return;
+    }
+
+    // USER ธรรมดา → อนุญาตให้เข้าได้แค่ /writer/apply เท่านั้น
+    if (
+      user.role === UserRole.USER &&
+      pathname &&
+      !pathname.startsWith("/writer/apply")
+    ) {
+      router.replace("/writer/apply");
+    }
+  }, [user, loading, router, pathname]);
+
+  const isApplyPage = pathname?.startsWith("/writer/apply");
+  const isUserWriterBlocked =
+    !loading && user && user.role === UserRole.USER && !isApplyPage;
+
+  // ระหว่างเช็คสถานะ / กำลัง redirect แสดง spinner ไว้ก่อน
+  if (loading || !user || isUserWriterBlocked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
+          <p className="text-sm text-muted-foreground">กำลังตรวจสอบสิทธิ์...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="min-h-screen bg-background">{children}</div>;
 }

@@ -8,18 +8,26 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [redirectTo, setRedirectTo] = useState("/");
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setRedirectTo(params.get("redirect") || "/");
   }, []);
+
+  // ถ้า login อยู่แล้วให้ redirect ไปหน้าแรก
+  useEffect(() => {
+    if (user) {
+      router.replace("/");
+    }
+  }, [user, router]);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -30,21 +38,24 @@ export default function LoginPage() {
       const result = await login(email, password);
 
       if (result.success) {
-        router.replace(redirectTo || "/");
+        setSuccess(true);
+        setTimeout(() => {
+          router.replace(redirectTo || "/");
+        }, 300);
       } else {
-        setError(result.error || "Login failed");
+        setError(result.error || "เข้าสู่ระบบไม่สำเร็จ");
+        setLoading(false);
       }
     } catch (submitError) {
       setError(
-        submitError instanceof Error ? submitError.message : "Login failed",
+        submitError instanceof Error ? submitError.message : "เข้าสู่ระบบไม่สำเร็จ",
       );
-    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 py-10 bg-background">
+    <main className="flex-1 flex items-center justify-center px-4 py-10 bg-background">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
           <Link href="/" className="inline-flex items-center gap-2">
@@ -53,21 +64,29 @@ export default function LoginPage() {
             </span>
           </Link>
           <p className="text-sm text-muted-foreground mt-2">
-            Login to continue
+            เข้าสู่ระบบเพื่อดำเนินการต่อ
           </p>
         </div>
 
-        <div className="bg-card rounded-2xl border border-border shadow-sm p-6 sm:p-7">
+        <div className="bg-card rounded-2xl border border-border shadow-sm p-6 sm:p-7 relative">
+          {success && (
+            <div className="absolute inset-0 bg-background/95 backdrop-blur-sm rounded-2xl flex items-center justify-center z-50">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-3"></div>
+                <p className="text-sm text-foreground font-medium">กำลังเข้าสู่ระบบ...</p>
+              </div>
+            </div>
+          )}
           <div className="mb-6">
             <h1 className="text-xl tracking-tight font-medium text-foreground">
-              Login
+              เข้าสู่ระบบ
             </h1>
           </div>
 
-          <form className="space-y-4" onSubmit={onSubmit}>
+          <form className="space-y-4" onSubmit={onSubmit} style={{ pointerEvents: success ? 'none' : 'auto', opacity: success ? 0.3 : 1 }}>
             <div>
               <label className="text-sm font-medium text-foreground">
-                Email
+                อีเมล
               </label>
               <div className="mt-2 relative">
                 <Mail
@@ -87,7 +106,7 @@ export default function LoginPage() {
 
             <div>
               <label className="text-sm font-medium text-foreground">
-                Password
+                รหัสผ่าน
               </label>
               <div className="mt-2 relative">
                 <Lock
@@ -127,15 +146,15 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-full text-sm font-medium transition-colors shadow-sm shadow-orange-500/20 flex items-center justify-center gap-2 disabled:opacity-70">
               <LogIn className="w-[18px] h-[18px]" strokeWidth={1.5} />
-              {loading ? "Logging in..." : "Login"}
+              {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
             </button>
 
             <p className="text-sm text-muted-foreground text-center pt-2">
-              No account?{" "}
+              ยังไม่มีบัญชี?{" "}
               <Link
                 href="/register"
                 className="text-orange-600 hover:text-orange-700 font-medium">
-                Register
+                สมัครสมาชิก
               </Link>
             </p>
           </form>

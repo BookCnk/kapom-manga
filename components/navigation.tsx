@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Search, Megaphone, BookOpen, MessageSquare, Sun, Moon } from "lucide-react";
+import { Search, Megaphone, BookOpen, Sun, Moon } from "lucide-react";
 import UserMenu from "@/components/user/UserMenu";
+import NotificationDropdown from "@/components/notifications/NotificationDropdown";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
@@ -90,14 +91,8 @@ export default function Navigation() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Only show notification icon if user is logged in */}
-            {user && (
-              <button className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground relative">
-                <MessageSquare className="w-5 h-5" />
-                {/* Notification badge */}
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
-            )}
+            {/* Notification dropdown */}
+            {user && <NotificationDropdown />}
 
             <Link
               href="/search"

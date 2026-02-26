@@ -29,8 +29,10 @@ export function handleRouteError(error: unknown) {
   }
 
   if (error instanceof ZodError) {
+    const fieldErrors = error.flatten().fieldErrors;
+    const firstError = Object.values(fieldErrors).flat().find(Boolean);
     return NextResponse.json(
-      { success: false, error: "Invalid request body", details: error.flatten() },
+      { success: false, error: firstError || "ข้อมูลไม่ถูกต้อง", details: error.flatten() },
       { status: 400 },
     );
   }

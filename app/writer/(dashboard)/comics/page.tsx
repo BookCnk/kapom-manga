@@ -2,21 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import {
-  Plus,
-  Search,
-  Edit,
-  Trash2,
-  X,
-  Eye,
-  Heart,
-  MessageCircle,
-  Coins,
-  Bookmark,
-  FileText,
-  ExternalLink,
-} from "lucide-react";
-import { MangaStatus, Visibility } from "@/lib/types/client-enums";
+import { Plus, Search, Edit, Trash2, X, Eye, Heart, MessageCircle, Coins, Bookmark, FileText, ExternalLink } from "lucide-react";
+import { MangaStatus, Visibility } from "@/generated/prisma/enums";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -77,9 +64,7 @@ export default function WriterComicsPage() {
   const [statusFilter, setStatusFilter] = useState<MangaStatus | "">("");
   const [visibilityFilter, setVisibilityFilter] = useState<Visibility | "">("");
   const [genreFilter, setGenreFilter] = useState<string | "">("");
-  const [matureFilter, setMatureFilter] = useState<
-    "all" | "mature" | "general"
-  >("all");
+  const [matureFilter, setMatureFilter] = useState<"all" | "mature" | "general">("all");
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -100,17 +85,7 @@ export default function WriterComicsPage() {
         setLoading(false);
       }
     }
-  }, [
-    authLoading,
-    user,
-    pagination.page,
-    itemsPerPage,
-    search,
-    statusFilter,
-    visibilityFilter,
-    genreFilter,
-    matureFilter,
-  ]);
+  }, [authLoading, user, pagination.page, itemsPerPage, search, statusFilter, visibilityFilter, genreFilter, matureFilter]);
 
   const fetchGenres = async () => {
     try {
@@ -140,9 +115,7 @@ export default function WriterComicsPage() {
         ...(statusFilter && { status: statusFilter }),
         ...(visibilityFilter && { visibility: visibilityFilter }),
         ...(genreFilter && { genreId: genreFilter }),
-        ...(matureFilter !== "all" && {
-          isMature: matureFilter === "mature" ? "true" : "false",
-        }),
+        ...(matureFilter !== "all" && { isMature: matureFilter === "mature" ? "true" : "false" }),
       });
 
       const response = await fetch(`/api/manga?${params}`);
@@ -222,21 +195,14 @@ export default function WriterComicsPage() {
     return labels[visibility];
   };
 
-  const hasActiveFilters =
-    search ||
-    statusFilter ||
-    visibilityFilter ||
-    genreFilter ||
-    matureFilter !== "all";
+  const hasActiveFilters = search || statusFilter || visibilityFilter || genreFilter || matureFilter !== "all";
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            การ์ตูนของฉัน
-          </h1>
+          <h1 className="text-2xl font-semibold text-foreground">การ์ตูนของฉัน</h1>
         </div>
         <Link
           href="/writer/comics/create"
@@ -249,9 +215,7 @@ export default function WriterComicsPage() {
       {/* Search and Filters */}
       <div className="bg-card rounded-xl border border-border p-6 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            ค้นหาการ์ตูน
-          </label>
+          <label className="block text-sm font-medium text-foreground mb-2">ค้นหาการ์ตูน</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <input
@@ -269,9 +233,7 @@ export default function WriterComicsPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              หมวดหมู่
-            </label>
+            <label className="block text-sm font-medium text-foreground mb-2">หมวดหมู่</label>
             <div className="relative">
               <select
                 value={genreFilter}
@@ -282,7 +244,7 @@ export default function WriterComicsPage() {
                 className={cn(
                   "w-full px-4 py-2.5 pr-10 border border-border rounded-lg bg-background text-foreground",
                   "appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                  "text-sm",
+                  "text-sm"
                 )}>
                 <option value="">ทั้งหมด</option>
                 {mainGenres.map((genre) => (
@@ -292,65 +254,41 @@ export default function WriterComicsPage() {
                 ))}
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <svg
-                  className="w-4 h-4 text-muted-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
+                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              ระดับเนื้อหา
-            </label>
+            <label className="block text-sm font-medium text-foreground mb-2">ระดับเนื้อหา</label>
             <div className="relative">
               <select
                 value={matureFilter}
                 onChange={(e) => {
-                  setMatureFilter(
-                    e.target.value as "all" | "mature" | "general",
-                  );
+                  setMatureFilter(e.target.value as "all" | "mature" | "general");
                   setPagination((prev) => ({ ...prev, page: 1 }));
                 }}
                 className={cn(
                   "w-full px-4 py-2.5 pr-10 border border-border rounded-lg bg-background text-foreground",
                   "appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                  "text-sm",
+                  "text-sm"
                 )}>
                 <option value="all">ทั้งหมด</option>
                 <option value="general">ทั่วไป</option>
                 <option value="mature">18+</option>
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <svg
-                  className="w-4 h-4 text-muted-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
+                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              สถานะ
-            </label>
+            <label className="block text-sm font-medium text-foreground mb-2">สถานะ</label>
             <div className="relative">
               <select
                 value={statusFilter}
@@ -361,7 +299,7 @@ export default function WriterComicsPage() {
                 className={cn(
                   "w-full px-4 py-2.5 pr-10 border border-border rounded-lg bg-background text-foreground",
                   "appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                  "text-sm",
+                  "text-sm"
                 )}>
                 <option value="">ทั้งหมด</option>
                 <option value={MangaStatus.ONGOING}>ยังไม่จบ</option>
@@ -369,26 +307,15 @@ export default function WriterComicsPage() {
                 <option value={MangaStatus.HIATUS}>พักชั่วคราว</option>
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <svg
-                  className="w-4 h-4 text-muted-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
+                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              การเผยแพร่
-            </label>
+            <label className="block text-sm font-medium text-foreground mb-2">การเผยแพร่</label>
             <div className="relative">
               <select
                 value={visibilityFilter}
@@ -399,7 +326,7 @@ export default function WriterComicsPage() {
                 className={cn(
                   "w-full px-4 py-2.5 pr-10 border border-border rounded-lg bg-background text-foreground",
                   "appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                  "text-sm",
+                  "text-sm"
                 )}>
                 <option value="">ทั้งหมด</option>
                 <option value={Visibility.PUBLIC}>เผยแพร่</option>
@@ -407,17 +334,8 @@ export default function WriterComicsPage() {
                 <option value={Visibility.PRIVATE}>ไม่เผยแพร่</option>
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <svg
-                  className="w-4 h-4 text-muted-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
+                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </div>
@@ -445,33 +363,20 @@ export default function WriterComicsPage() {
               value={itemsPerPage}
               onChange={(e) => {
                 setItemsPerPage(Number(e.target.value));
-                setPagination((prev) => ({
-                  ...prev,
-                  page: 1,
-                  limit: Number(e.target.value),
-                }));
+                setPagination((prev) => ({ ...prev, page: 1, limit: Number(e.target.value) }));
               }}
               className={cn(
                 "px-3 py-1.5 pr-8 border border-border rounded-lg bg-background text-foreground",
                 "appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20",
-                "text-sm",
+                "text-sm"
               )}>
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={50}>50</option>
             </select>
             <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg
-                className="w-3 h-3 text-muted-foreground"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
+              <svg className="w-3 h-3 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </div>
           </div>
@@ -495,67 +400,46 @@ export default function WriterComicsPage() {
             <table className="w-full">
               <thead className="bg-muted/30 border-b border-border">
                 <tr>
-                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[28%]">
-                    ชื่อเรื่อง
-                  </th>
-                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[18%]">
-                    หมวดหมู่
-                  </th>
-                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[10%]">
-                    ระดับเนื้อหา
-                  </th>
-                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">
-                    สถานะ
-                  </th>
-                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">
-                    การเผยแพร่
-                  </th>
-                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">
-                    ยอดขาย
-                  </th>
-                  <th className="text-right px-5 py-4 font-medium text-sm text-foreground w-[8%]">
-                    จัดการ
-                  </th>
+                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[28%]">ชื่อเรื่อง</th>
+                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[18%]">หมวดหมู่</th>
+                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[10%]">ระดับเนื้อหา</th>
+                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">สถานะ</th>
+                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">การเผยแพร่</th>
+                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">ยอดขาย</th>
+                  <th className="text-right px-5 py-4 font-medium text-sm text-foreground w-[8%]">จัดการ</th>
                 </tr>
               </thead>
               <tbody>
                 {mangas.map((manga) => {
-                  const genreNames = manga.genres
-                    .map((g) => g.name)
-                    .join(" X ");
+                  const genreNames = manga.genres.map((g) => g.name).join(" X ");
                   return (
-                    <tr
-                      key={manga.id}
-                      className="border-b border-border group hover:bg-muted/20 transition-colors">
-                      <td className="px-5 py-4">
+                    <tr key={manga.id} className="border-b border-border group hover:bg-muted/20 transition-colors">
+                      <td className="px-5 py-5">
                         <Link
                           href={`/writer/comics/${manga.slug}`}
-                          className="flex items-center gap-3 cursor-pointer">
-                          <div className="w-12 h-16 rounded overflow-hidden bg-muted flex-shrink-0">
+                          className="flex items-center gap-4 cursor-pointer">
+                          <div className="w-16 h-22 rounded-lg overflow-hidden bg-muted flex-shrink-0" style={{ height: "88px" }}>
                             {manga.coverUrl ? (
                               <img
                                 src={manga.coverUrl}
                                 alt={manga.title}
+                                loading="lazy"
                                 className="w-full h-full object-cover"
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center">
-                                <span className="text-xs text-muted-foreground">
-                                  ไม่มีภาพ
-                                </span>
+                                <span className="text-xs text-muted-foreground">ไม่มีภาพ</span>
                               </div>
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-foreground truncate group-hover:text-orange-500 transition-colors">
+                            <h3 className="font-medium text-[15px] text-foreground truncate group-hover:text-orange-500 transition-colors">
                               {manga.title}
                             </h3>
-                            <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                               <div className="flex items-center gap-1">
                                 <FileText className="w-3.5 h-3.5" />
-                                <span>
-                                  {formatNumber(manga._count.chapters)}
-                                </span>
+                                <span>{formatNumber(manga._count.chapters)}</span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <Eye className="w-3.5 h-3.5" />
@@ -563,41 +447,33 @@ export default function WriterComicsPage() {
                               </div>
                               <div className="flex items-center gap-1">
                                 <Bookmark className="w-3.5 h-3.5" />
-                                <span>
-                                  {formatNumber(manga._count.bookmarks)}
-                                </span>
+                                <span>{formatNumber(manga._count.bookmarks)}</span>
                               </div>
                             </div>
                           </div>
                         </Link>
                       </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-foreground">
-                          {genreNames || "-"}
-                        </span>
+                      <td className="px-5 py-5">
+                        <span className="text-sm text-foreground">{genreNames || "-"}</span>
                       </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-foreground">
-                          {manga.isMature ? "18+" : "ทั่วไป"}
-                        </span>
+                      <td className="px-5 py-5">
+                        <span className="text-sm text-foreground">{manga.isMature ? "18+" : "ทั่วไป"}</span>
                       </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-foreground">
-                          {getStatusLabel(manga.status)}
-                        </span>
+                      <td className="px-5 py-5">
+                        <span className="text-sm text-foreground">{getStatusLabel(manga.status)}</span>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-5">
                         <span
                           className={cn(
                             "inline-flex px-2.5 py-1 rounded-full text-xs font-medium",
                             manga.visibility === Visibility.PUBLIC
                               ? "bg-green-500/10 text-green-600"
-                              : "bg-muted text-muted-foreground",
+                              : "bg-muted text-muted-foreground"
                           )}>
                           {getVisibilityLabel(manga.visibility)}
                         </span>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-5">
                         <div className="flex items-center gap-1.5">
                           <Coins className="w-4 h-4 text-orange-500" />
                           <span className="text-sm font-medium text-foreground">
@@ -605,14 +481,14 @@ export default function WriterComicsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-5 py-5">
                         <div className="flex items-center justify-end gap-2">
                           <Link
                             href={`/manga/${manga.slug}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 text-muted-foreground hover:text-orange-500 transition-colors rounded hover:bg-orange-500/10">
+                            className="p-2 text-muted-foreground hover:text-orange-500 transition-colors rounded hover:bg-orange-500/10">
                             <ExternalLink className="w-4 h-4" />
                           </Link>
                           <button
@@ -620,7 +496,7 @@ export default function WriterComicsPage() {
                               e.stopPropagation();
                               handleDelete(manga.id);
                             }}
-                            className="p-1.5 text-muted-foreground hover:text-red-500 transition-colors rounded hover:bg-red-500/10">
+                            className="p-2 text-muted-foreground hover:text-red-500 transition-colors rounded hover:bg-red-500/10">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -642,31 +518,21 @@ export default function WriterComicsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() =>
-                    setPagination((prev) => ({
-                      ...prev,
-                      page: Math.max(1, prev.page - 1),
-                    }))
-                  }
+                  onClick={() => setPagination((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                   disabled={pagination.page === 1}
                   className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                   ก่อนหน้า
                 </button>
                 <div className="flex items-center gap-1">
-                  {Array.from(
-                    { length: pagination.totalPages },
-                    (_, i) => i + 1,
-                  ).map((pageNum) => (
+                  {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
                     <button
                       key={pageNum}
-                      onClick={() =>
-                        setPagination((prev) => ({ ...prev, page: pageNum }))
-                      }
+                      onClick={() => setPagination((prev) => ({ ...prev, page: pageNum }))}
                       className={cn(
                         "px-3 py-1.5 text-sm rounded-lg transition-colors",
                         pagination.page === pageNum
                           ? "bg-orange-500 text-white"
-                          : "border border-border hover:bg-muted",
+                          : "border border-border hover:bg-muted"
                       )}>
                       {pageNum}
                     </button>
@@ -674,10 +540,7 @@ export default function WriterComicsPage() {
                 </div>
                 <button
                   onClick={() =>
-                    setPagination((prev) => ({
-                      ...prev,
-                      page: Math.min(prev.totalPages, prev.page + 1),
-                    }))
+                    setPagination((prev) => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))
                   }
                   disabled={pagination.page === pagination.totalPages}
                   className="px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors">

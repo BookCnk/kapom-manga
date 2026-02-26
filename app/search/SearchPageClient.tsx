@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import SearchBar from "@/components/home/SearchBar";
 import SearchGenreFilter from "@/components/home/SearchGenreFilter";
 import SearchResultCard from "@/components/search/SearchResultCard";
 import type { MangaCard } from "@/lib/mock/homeData";
+import { getGenreBySlug } from "@/lib/config/genres";
+
+const ITEMS_PER_PAGE = 12;
 
 function normalize(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
@@ -73,14 +76,30 @@ export default function SearchPageClient() {
         }
 
         const transformedMangas: MangaCard[] = allMangas.map((manga: any) => {
-          const mainGenre = manga.genres?.find((mg: any) => mg.genre?.parentId === null)?.genre;
-          const subGenre = manga.genres?.find((mg: any) => mg.genre?.parentId !== null)?.genre;
-          const genreName = subGenre?.name || mainGenre?.name || "ทั่วไป";
+          // ใช้ genreSlugs (JSON array) แทน genres relation
+          const genreSlugs: string[] = Array.isArray(manga.genreSlugs)
+            ? (manga.genreSlugs as string[])
+            : [];
+          
+          // แปลง slugs เป็นชื่อ genre และเลือกเฉพาะ main genres (type: "main")
+          const genreNames = genreSlugs
+            .map((slug) => getGenreBySlug(slug))
+            .filter((genre) => genre && genre.type === "main")
+            .map((genre) => genre!.name)
+            .slice(0, 2); // จำกัดไว้ 2 genre
+          
+          // ใช้ genre แรกเป็น genre หลัก (สำหรับ backward compatibility)
+          const genreName = genreNames[0] || "ทั่วไป";
+          
           const totalChapters = manga._count?.chapters || 0;
 
+          // ใช้วันที่เพิ่มตอนล่าสุด (latestChapterAt) หรือ createdAt ของมังงะ
+          // ไม่ใช้ updatedAt เพราะจะเปลี่ยนทุกครั้งที่แก้ไขข้อมูลมังงะ
+          const contentDate = manga.latestChapterAt || manga.createdAt;
+
           let latestUpdatedLabel = "";
-          if (manga.updatedAt) {
-            const updatedDate = new Date(manga.updatedAt);
+          if (contentDate) {
+            const updatedDate = new Date(contentDate);
             const now = new Date();
             const diffMs = now.getTime() - updatedDate.getTime();
             const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -91,10 +110,10 @@ export default function SearchPageClient() {
             else latestUpdatedLabel = updatedDate.toLocaleDateString("th-TH");
           }
 
-          const updatedAtString = manga.updatedAt
-            ? manga.updatedAt instanceof Date
-              ? manga.updatedAt.toISOString()
-              : String(manga.updatedAt)
+          const updatedAtString = contentDate
+            ? contentDate instanceof Date
+              ? contentDate.toISOString()
+              : String(contentDate)
             : new Date().toISOString();
 
           return {
@@ -112,7 +131,9 @@ export default function SearchPageClient() {
             isNew: false,
             tags: [],
             genre: genreName as any,
+            genres: genreNames, // array ของ genre names (สูงสุด 2)
             translator: manga.creator?.name || "RTN Team",
+            creatorUsername: manga.creator?.username || (manga.creator?.id ? String(manga.creator.id) : undefined),
           };
         });
 
@@ -135,61 +156,105 @@ export default function SearchPageClient() {
     return matchesQuery && matchesGenre;
   });
 
+  // Lazy load: แสดงผลทีละ ITEMS_PER_PAGE รายการ
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  const loaderRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset visibleCount เมื่อ results เปลี่ยน (เช่น เปลี่ยนคำค้นหาหรือ genre)
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [normalizedQuery, selectedGenre]);
+
+  const visibleResults = results.slice(0, visibleCount);
+  const hasMore = visibleCount < results.length;
+
+  // IntersectionObserver: โหลดเพิ่มเมื่อ scroll ถึง sentinel
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const target = entries[0];
+      if (target.isIntersecting && hasMore) {
+        setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, results.length));
+      }
+    },
+    [hasMore, results.length],
+  );
+
+  useEffect(() => {
+    const option: IntersectionObserverInit = {
+      root: null,
+      rootMargin: "200px",
+      threshold: 0,
+    };
+    const observer = new IntersectionObserver(handleObserver, option);
+    if (loaderRef.current) observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [handleObserver]);
+
   return (
-    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <section className="space-y-4">
-        <h1 className="text-xl font-semibold text-foreground">ค้นหา</h1>
-        <SearchBar initialQuery={rawQuery} className="w-full" autoSearch delayMs={1000} />
-      </section>
+    <div className="w-full">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        <section className="space-y-4">
+          <h1 className="text-xl font-semibold text-foreground">ค้นหา</h1>
+          <SearchBar initialQuery={rawQuery} className="w-full" autoSearch delayMs={1000} />
+        </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-        <SearchGenreFilter genres={genres} currentGenre={selectedGenre} />
-        <button className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
-          <span>สถานะ</span>
-          <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>
-        </button>
-        <button className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
-          <span>ระดับเนื้อหา (Rating)</span>
-          <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>
-        </button>
-        <button className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
-          <span>จัดเรียงตาม</span>
-          <span className="text-[11px] text-muted-foreground">อัปเดตล่าสุด</span>
-        </button>
-      </section>
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs w-full">
+          <SearchGenreFilter genres={genres} currentGenre={selectedGenre} />
+          <button className="w-full flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
+            <span>สถานะ</span>
+            <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>
+          </button>
+          <button className="w-full flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
+            <span>ระดับเนื้อหา (Rating)</span>
+            <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>
+          </button>
+          <button className="w-full flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
+            <span>จัดเรียงตาม</span>
+            <span className="text-[11px] text-muted-foreground">อัปเดตล่าสุด</span>
+          </button>
+        </section>
 
-      <section className="space-y-3">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
-          </div>
-        ) : (
-          <>
-            <p className="text-xs text-muted-foreground">
-              พบ {results.length} เรื่อง
-              {normalizedQuery && (
-                <>
-                  {" "}
-                  สำหรับคำค้นหา <span className="font-medium">"{normalizedQuery}"</span>
-                </>
-              )}
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {results.map((item) => (
-                <SearchResultCard key={item.id} item={item} />
-              ))}
+        <section className="space-y-3 w-full">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
             </div>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                พบ {results.length} เรื่อง
+                {normalizedQuery && (
+                  <>
+                    {" "}
+                    สำหรับคำค้นหา <span className="font-medium">"{normalizedQuery}"</span>
+                  </>
+                )}
+              </p>
 
-            {results.length === 0 && !loading && (
-              <div className="text-center py-12 text-muted-foreground">
-                <p>ไม่พบผลลัพธ์</p>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
+                {visibleResults.map((item) => (
+                  <SearchResultCard key={item.id} item={item} />
+                ))}
               </div>
-            )}
-          </>
-        )}
-      </section>
-    </main>
+
+              {/* Sentinel สำหรับ infinite scroll */}
+              {hasMore && (
+                <div ref={loaderRef} className="flex items-center justify-center py-6">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                  <span className="ml-2 text-xs text-muted-foreground">กำลังโหลดเพิ่ม...</span>
+                </div>
+              )}
+
+              {results.length === 0 && !loading && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p>ไม่พบผลลัพธ์</p>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }
 

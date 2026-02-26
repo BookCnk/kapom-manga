@@ -21,8 +21,15 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         email: true,
+        username: true,
         name: true,
+        bio: true,
+        facebookUrl: true,
+        tiktokUrl: true,
         role: true,
+        avatarUrl: true,
+        bannerUrl: true,
+        createdAt: true,
         passwordHash: true,
       },
     });
@@ -81,8 +88,15 @@ export async function POST(request: NextRequest) {
       user: {
         id: user.id,
         email: user.email,
+        username: user.username,
         name: user.name,
+        bio: user.bio,
+        facebookUrl: user.facebookUrl,
+        tiktokUrl: user.tiktokUrl,
         role: user.role,
+        avatarUrl: user.avatarUrl,
+        bannerUrl: user.bannerUrl,
+        createdAt: user.createdAt,
       },
     });
   } catch (error) {

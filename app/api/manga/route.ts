@@ -109,7 +109,12 @@ export async function GET(request: NextRequest) {
         createdAt: true,
         updatedAt: true,
         genreSlugs: true,
-        creator: { select: { id: true, name: true, email: true } },
+        creator: { select: { id: true, name: true, email: true, username: true } },
+        chapters: {
+          select: { createdAt: true },
+          orderBy: { createdAt: "desc" as const },
+          take: 1,
+        },
         _count: {
           select: {
             chapters: true,
@@ -149,9 +154,13 @@ export async function GET(request: NextRequest) {
         })
         .filter((g) => g !== null);
 
+      // ใช้วันที่สร้างตอนล่าสุด (ถ้ามี) หรือ createdAt ของมังงะ
+      const latestChapterAt = manga.chapters?.[0]?.createdAt || null;
+
       return {
         ...manga,
         genres,
+        latestChapterAt,
       };
     });
 
@@ -251,24 +260,25 @@ export async function POST(request: NextRequest) {
         try {
           // Create or get tags
           const tagPromises = tags.map(async (tagName: string) => {
-            // Generate slug from tag name
+            // Generate slug from tag name (support Thai and other unicode characters)
             const tagSlug = tagName
               .toLowerCase()
+              .trim()
               .replace(/\s+/g, "-")
-              .replace(/[^a-z0-9-]/g, "");
+              .replace(/[^a-z0-9\u0E00-\u0E7F-]/g, "")
+              .replace(/-+/g, "-")
+              .replace(/^-|-$/g, "");
 
-            // Ensure slug is not empty
-            if (!tagSlug) {
-              throw new Error(`Invalid tag name: ${tagName}`);
-            }
+            // If slug is still empty, use encodeURIComponent as fallback
+            const finalSlug = tagSlug || encodeURIComponent(tagName.trim()).toLowerCase();
 
             // Try to find existing tag using upsert
             const tag = await tx.tag.upsert({
-              where: { slug: tagSlug },
+              where: { slug: finalSlug },
               update: {},
               create: {
                 name: tagName,
-                slug: tagSlug,
+                slug: finalSlug,
               },
             });
 

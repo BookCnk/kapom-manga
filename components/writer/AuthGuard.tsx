@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { UserRole } from "@/lib/types/client-enums";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -10,22 +11,29 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Don't redirect if still loading
     if (loading) return;
 
-    // Don't redirect if user is logged in
-    if (user) return;
+    // If not logged in → ส่งไปหน้า login พร้อม redirect กลับมาหน้านักเขียนเดิม
+    if (!user) {
+      if (pathname === "/login") return;
+      const redirectPath = encodeURIComponent(pathname || "/");
+      router.replace(`/login?redirect=${redirectPath}`);
+      return;
+    }
 
-    // Don't redirect if already on login page
-    if (pathname === "/login") return;
-
-    // Redirect to login with return path
-    const redirectPath = encodeURIComponent(pathname || "/");
-    router.replace(`/login?redirect=${redirectPath}`);
+    // ถ้าเป็น USER ธรรมดา → ไม่ให้เข้าหน้านักเขียน ส่งไปหน้า /writer/apply (ยกเว้นตอนอยู่ที่ apply แล้ว)
+    if (
+      user.role === UserRole.USER &&
+      pathname &&
+      !pathname.startsWith("/writer/apply")
+    ) {
+      router.replace("/writer/apply");
+      return;
+    }
   }, [user, loading, router, pathname]);
 
-  // Show loading state while checking auth
-  if (loading) {
+  // ระหว่างโหลดสถานะหรือกำลัง redirect แสดง spinner ไว้ก่อน
+  if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
@@ -33,8 +41,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Don't render children if not authenticated (will redirect)
-  if (!user) {
+  // USER ที่ยังไม่เป็นนักเขียนจะถูก redirect ไป /writer/apply ใน useEffect ด้านบน
+  if (user.role === UserRole.USER && pathname !== "/writer/apply") {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>

@@ -56,7 +56,7 @@ export default function SearchBar({
   return (
     <form
       onSubmit={handleSubmit}
-      className={`relative w-full max-w-xl ${className ?? ""}`}
+      className={`relative w-full ${className ?? ""}`}
     >
       <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground w-[18px] h-[18px]" />
       <input

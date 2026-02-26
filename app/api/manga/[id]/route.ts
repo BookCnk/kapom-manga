@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { MangaStatus, Visibility } from "@prisma/client";
+import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { prisma } from "@/lib/prisma";
 import { handleRouteError, HttpError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
@@ -10,6 +11,50 @@ import {
   ensureTranslatorOrAdmin,
 } from "@/lib/api/permissions";
 import { getGenreBySlug } from "@/lib/config/genres";
+
+function getS3Client() {
+  const endpoint = process.env.S3_ENDPOINT;
+  const port = process.env.S3_PORT;
+  const useSsl = process.env.S3_USE_SSL === "true";
+  const accessKeyId = process.env.S3_ACCESS_KEY;
+  const secretAccessKey = process.env.S3_SECRET_KEY;
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    throw new Error("S3 configuration is missing");
+  }
+
+  const protocol = useSsl ? "https" : "http";
+  const fullEndpoint = port
+    ? `${protocol}://${endpoint}:${port}`
+    : `${protocol}://${endpoint}`;
+
+  return new S3Client({
+    region: "us-east-1",
+    endpoint: fullEndpoint,
+    forcePathStyle: true,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+}
+
+function extractKeyFromUrl(url: string, bucket: string): string | null {
+  const marker = `/${bucket}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  return url.substring(idx + marker.length);
+}
+
+async function deleteS3Image(url: string) {
+  const bucket = process.env.S3_BUCKET_NAME;
+  if (!bucket || !url) return;
+  try {
+    const key = extractKeyFromUrl(url, bucket);
+    if (!key) return;
+    const s3 = getS3Client();
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (err) {
+    console.error("Failed to delete old image from S3:", err);
+  }
+}
 
 type Params = {
   params: {
@@ -81,6 +126,12 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const body = updateMangaSchema.parse(await request.json());
     const { genreSlugs, tags, ...mangaData } = body;
 
+    // ดึงข้อมูลรูปเดิมก่อนอัปเดต เพื่อลบรูปเก่าจาก S3
+    const existing = await prisma.manga.findUnique({
+      where: { id: mangaId },
+      select: { coverUrl: true, bannerUrl: true },
+    });
+
     // Validate genre slugs if provided
     if (genreSlugs !== undefined) {
       const slugs = Array.isArray(genreSlugs) ? genreSlugs : [];
@@ -113,19 +164,20 @@ export async function PATCH(request: NextRequest, { params }: Params) {
             const tagPromises = tags.map(async (tagName: string) => {
               const tagSlug = tagName
                 .toLowerCase()
+                .trim()
                 .replace(/\s+/g, "-")
-                .replace(/[^a-z0-9-]/g, "");
+                .replace(/[^a-z0-9\u0E00-\u0E7F-]/g, "")
+                .replace(/-+/g, "-")
+                .replace(/^-|-$/g, "");
 
-              if (!tagSlug) {
-                return null;
-              }
+              const finalSlug = tagSlug || encodeURIComponent(tagName.trim()).toLowerCase();
 
               const tag = await (tx as any).tag.upsert({
-                where: { slug: tagSlug },
+                where: { slug: finalSlug },
                 update: {},
                 create: {
                   name: tagName,
-                  slug: tagSlug,
+                  slug: finalSlug,
                 },
               });
 
@@ -155,6 +207,24 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       return updatedManga;
     });
 
+    // ลบรูปเก่าจาก S3 หลังอัปเดตสำเร็จ
+    if (existing) {
+      if (
+        existing.coverUrl &&
+        body.coverUrl !== undefined &&
+        body.coverUrl !== existing.coverUrl
+      ) {
+        await deleteS3Image(existing.coverUrl);
+      }
+      if (
+        existing.bannerUrl &&
+        body.bannerUrl !== undefined &&
+        body.bannerUrl !== existing.bannerUrl
+      ) {
+        await deleteS3Image(existing.bannerUrl);
+      }
+    }
+
     return ok({ manga });
   } catch (error) {
     return handleRouteError(error);
@@ -169,7 +239,20 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const mangaId = parseId(params.id);
     await ensureCanManageManga(actor, mangaId);
 
+    // ดึงข้อมูลรูปก่อนลบ เพื่อลบรูปจาก S3 ด้วย
+    const manga = await prisma.manga.findUnique({
+      where: { id: mangaId },
+      select: { coverUrl: true, bannerUrl: true },
+    });
+
     await prisma.manga.delete({ where: { id: mangaId } });
+
+    // ลบรูปจาก S3 หลังลบมังงะสำเร็จ
+    if (manga) {
+      if (manga.coverUrl) await deleteS3Image(manga.coverUrl);
+      if (manga.bannerUrl) await deleteS3Image(manga.bannerUrl);
+    }
+
     return ok({ success: true });
   } catch (error) {
     return handleRouteError(error);
