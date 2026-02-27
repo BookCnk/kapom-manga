@@ -433,9 +433,12 @@ export default function WriterComicsPage() {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-[15px] text-foreground truncate group-hover:text-orange-500 transition-colors">
-                              {manga.title}
-                            </h3>
+                            {/* จำกัดความกว้างชื่อเรื่องให้เท่ากันทุกเรื่อง และใช้ ... เมื่อเกิน */}
+                            <div className="max-w-[320px]">
+                              <h3 className="font-medium text-[15px] text-foreground truncate group-hover:text-orange-500 transition-colors">
+                                {manga.title}
+                              </h3>
+                            </div>
                             <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                               <div className="flex items-center gap-1">
                                 <FileText className="w-3.5 h-3.5" />
@@ -484,7 +487,7 @@ export default function WriterComicsPage() {
                       <td className="px-5 py-5">
                         <div className="flex items-center justify-end gap-2">
                           <Link
-                            href={`/manga/${manga.slug}`}
+                            href={`/comic/${manga.slug}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}

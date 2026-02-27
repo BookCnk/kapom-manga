@@ -26,7 +26,7 @@ export default function SidebarRanking({ items }: { items: MangaCardType[] }) {
       <div className="space-y-4 overflow-y-auto pr-1 lg:h-[calc(100%-56px-56px)]">
         {items.map((item, index) => (
           <Link
-            href={`/manga/${item.slug}`}
+            href={`/comic/${item.slug}`}
             key={item.id}
             className="flex items-center gap-4 group">
             {index < 3 ? (

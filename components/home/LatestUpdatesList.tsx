@@ -43,7 +43,7 @@ export default function LatestUpdatesList({ items, limit = 16 }: Props) {
                   <div className="flex h-[88px] w-full">
                     {/* Cover */}
                     <Link
-                      href={`/manga/${item.slug}`}
+                      href={`/comic/${item.slug}`}
                       className="relative h-[88px] min-w-[64px] mr-3 lg:mr-4"
                       title={title}>
                       {hasError ? (
@@ -69,7 +69,7 @@ export default function LatestUpdatesList({ items, limit = 16 }: Props) {
                       <div className="min-w-0">
                         <div className="flex space-x-1 items-center mb-0.5 font-medium min-w-0">
                           <Link
-                            href={`/manga/${item.slug}`}
+                            href={`/comic/${item.slug}`}
                             className="hover:text-orange-600 min-w-0"
                             title={title}>
                             <h2 className="line-clamp-1 font-semibold text-foreground">

@@ -46,11 +46,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         createdAt: true,
         updatedAt: true,
         creator: { select: { id: true, name: true, email: true } },
-        tags: {
-          include: {
-            tag: { select: { id: true, name: true, slug: true } },
-          },
-        },
+        tagSlugs: true,
         chapters: {
           select: {
             id: true,

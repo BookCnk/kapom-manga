@@ -64,10 +64,12 @@ export default function SettingsPage() {
     try {
       const date = new Date(iso);
       if (Number.isNaN(date.getTime())) return "-";
-      return date.toLocaleDateString("th-TH", {
+      return date.toLocaleString("th-TH", {
         day: "2-digit",
         month: "short",
         year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch {
       return "-";

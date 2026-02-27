@@ -3,10 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, Upload, X, Image as ImageIcon, Plus, FileText, BarChart3, List, Trash2, FileStack, Edit, Download, ExternalLink, Pencil, TrendingUp, Coins, Settings, Search, Menu, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Save, Upload, X, Image as ImageIcon, Plus, FileText, BarChart3, List, Trash2, FileStack, Edit, ExternalLink, Pencil, TrendingUp, Coins, Settings, Search, Menu, CheckCircle, ChevronLeft, ChevronRight, AlertTriangle, Check, Calendar, Clock, ChevronDown, Globe2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { MangaStatus, Visibility } from "@/lib/types/client-enums";
 import { cn } from "@/lib/utils";
+import { contentTypeOptions } from "@/lib/config/contentTypes";
+import { RichTextEditor } from "@/components/writer/RichTextEditor";
+import { PageSizeSelect } from "@/components/ui/PageSizeSelect";
+import { OrderSelect } from "@/components/ui/OrderSelect";
 import { toast } from "sonner";
 import AuthGuard from "@/components/writer/AuthGuard";
 import { checkInappropriateContent } from "@/lib/utils/content-filter";
@@ -27,6 +31,13 @@ type MultiChapterResult = {
 
 // Helper function for Buddhist Era
 const getCurrentYearBE = () => new Date().getFullYear() + 543;
+
+// Thai calendar constants
+const THAI_MONTHS_FULL = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+const THAI_DAYS_SHORT = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 
 // Dynamically import recharts to avoid SSR issues
 const MonthlySalesChart = dynamic(
@@ -188,6 +199,7 @@ type Manga = {
   status: MangaStatus;
   visibility: Visibility;
   isMature: boolean;
+  contentType?: string;
   views: number;
   likesCount: number;
   createdAt: string;
@@ -196,13 +208,7 @@ type Manga = {
   genres?: Array<{
     genre: Genre;
   }>;
-  tags: Array<{
-    tag: {
-      id: number;
-      name: string;
-      slug: string;
-    };
-  }>;
+  tagSlugs: string[];
   chapters: Chapter[];
   _count: {
     chapters: number;
@@ -257,6 +263,7 @@ export default function EditMangaPage() {
     status: MangaStatus;
     visibility: Visibility;
     isMature: boolean;
+    contentType: string;
     mainGenreSlug: string;
     subGenreSlug: string;
   }>({
@@ -267,6 +274,7 @@ export default function EditMangaPage() {
     status: MangaStatus.ONGOING,
     visibility: Visibility.PUBLIC,
     isMature: false,
+    contentType: "jp-manga",
     mainGenreSlug: "",
     subGenreSlug: "",
   });
@@ -285,9 +293,26 @@ export default function EditMangaPage() {
     number: 1,
     price: 0,
     status: "published" as "published" | "draft",
+    scheduleEnabled: false,
+    scheduledAt: "" as string, // ISO string หรือว่าง = ใช้เวลาปัจจุบันเมื่อเผยแพร่
   });
   const [chapterImages, setChapterImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [priceInputValue, setPriceInputValue] = useState<string>("0");
+  const [isPaidMode, setIsPaidMode] = useState(false);
+  const priceInputRef = useRef<HTMLInputElement>(null);
+  const [showContentTypeDropdown, setShowContentTypeDropdown] = useState(false);
+  const [showRatingDropdown, setShowRatingDropdown] = useState(false);
+  const [showMainGenreDropdown, setShowMainGenreDropdown] = useState(false);
+  const [showSubGenreDropdown, setShowSubGenreDropdown] = useState(false);
+  const mainGenreDropdownRef = useRef<HTMLDivElement | null>(null);
+  const subGenreDropdownRef = useRef<HTMLDivElement | null>(null);
+  const ratingDropdownRef = useRef<HTMLDivElement | null>(null);
+  const contentTypeDropdownRef = useRef<HTMLDivElement | null>(null);
+  // การแสดงรายการตอนในตาราง (จำนวนต่อหน้า + การเรียงลำดับ + หน้า)
+  const [chapterPageSize, setChapterPageSize] = useState<number>(50);
+  const [chapterPage, setChapterPage] = useState<number>(1);
+  const [chapterSortOrder, setChapterSortOrder] = useState<"asc" | "desc">("asc");
   const [uploadingChapter, setUploadingChapter] = useState(false);
   const [uploadingProgress, setUploadingProgress] = useState<{
     current: number;
@@ -313,6 +338,596 @@ export default function EditMangaPage() {
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const previousCoverRef = useRef<string | null>(null);
   const originalCoverRef = useRef<string | null>(null);
+
+  // เลือกหลายตอน + จัดการแบบกลุ่ม
+  const [selectedChapterIds, setSelectedChapterIds] = useState<number[]>([]);
+  const [bulkPriceInput, setBulkPriceInput] = useState<string>("");
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState<
+    | {
+        mode: "single";
+        chapterId: number;
+        chapterNumber: number;
+        chapterTitle: string;
+      }
+    | {
+        mode: "bulk";
+        count: number;
+      }
+    | null
+  >(null);
+
+  // Helper สำหรับโหมดการแสดงผลตอน (ซ่อน / ตอนนี้ / ตั้งเวลา)
+  type DisplayMode = "hidden" | "now" | "schedule";
+
+  const getDisplayMode = (): DisplayMode => {
+    if (chapterFormData.status === "draft") return "hidden";
+    if (chapterFormData.scheduleEnabled) return "schedule";
+    return "now";
+  };
+
+  // อ่านราคาจาก DOM โดยตรง เพื่อป้องกัน stale state
+  const getCurrentPrice = (): number => {
+    if (!isPaidMode) return 0;
+    // อ่านจาก ref (DOM) ก่อน → fallback เป็น state
+    const raw = priceInputRef.current?.value ?? priceInputValue ?? "0";
+    const parsed = parseFloat(raw.replace(",", "."));
+    if (isNaN(parsed) || parsed < 0) return 0;
+    return Math.round(parsed * 100) / 100;
+  };
+
+  // คืนรายการตอนตาม sort + page ปัจจุบัน
+  const getVisibleChapters = () => {
+    if (!manga) return [];
+    const sorted = [...manga.chapters].sort((a, b) =>
+      chapterSortOrder === "asc" ? a.number - b.number : b.number - a.number,
+    );
+    const startIndex = (chapterPage - 1) * chapterPageSize;
+    const endIndex = startIndex + chapterPageSize;
+    return sorted.slice(startIndex, endIndex);
+  };
+
+  // สร้างรายการหมายเลขหน้าแบบมี ... (เช่น 1 2 ... 5 6 7 ... 10)
+  const getPageItems = (totalPages: number, currentPage: number): (number | "dots")[] => {
+    const delta = 1; // แสดงหน้าก่อน/หลัง 1 หน้า
+    const range: number[] = [];
+    const pages: (number | "dots")[] = [];
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    let prev: number | null = null;
+    for (const page of range) {
+      if (prev !== null) {
+        if (page - prev === 2) {
+          pages.push(prev + 1);
+        } else if (page - prev > 2) {
+          pages.push("dots");
+        }
+      }
+      pages.push(page);
+      prev = page;
+    }
+
+    return pages;
+  };
+
+  const handleDisplayModeChange = (mode: DisplayMode) => {
+    if (mode === "hidden") {
+      setChapterFormData((prev) => ({
+        ...prev,
+        status: "draft",
+        scheduleEnabled: false,
+        scheduledAt: "",
+      }));
+    } else if (mode === "now") {
+      setChapterFormData((prev) => ({
+        ...prev,
+        status: "published",
+        scheduleEnabled: false,
+        scheduledAt: "",
+      }));
+    } else {
+      // ตั้งเวลาเผยแพร่ → ถ้ายังไม่มีค่า ให้ใส่เวลาปัจจุบัน + 1 ชั่วโมง อัตโนมัติ
+      setChapterFormData((prev) => {
+        // ถ้ามี scheduledAt อยู่แล้ว (เช่น เมื่อแก้ไขตอนที่ตั้งเวลาไว้) ให้คงค่านั้นไว้
+        if (prev.scheduledAt && prev.scheduledAt.trim() !== "") {
+          // Sync calendar view to the existing scheduled date
+          try {
+            const existingDate = new Date(prev.scheduledAt);
+            if (!isNaN(existingDate.getTime())) {
+              setScheduleCalMonth(existingDate.getMonth());
+              setScheduleCalYear(existingDate.getFullYear());
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+          return {
+            ...prev,
+            status: "published",
+            scheduleEnabled: true,
+            scheduledAt: prev.scheduledAt, // คงค่าเดิม
+          };
+        }
+        
+        // ถ้ายังไม่มีค่า ให้ใส่เวลาปัจจุบัน + 1 ชั่วโมง อัตโนมัติ
+        const now = new Date();
+        now.setHours(now.getHours() + 1);
+        const defaultSchedule = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        // Sync calendar view to the default schedule month
+        setScheduleCalMonth(now.getMonth());
+        setScheduleCalYear(now.getFullYear());
+        return {
+          ...prev,
+          status: "published",
+          scheduleEnabled: true,
+          scheduledAt: defaultSchedule,
+        };
+      });
+    }
+  };
+
+  const handleScheduledDateChange = (value: string) => {
+    // ไม่ให้เลือกวันในอดีต
+    const today = new Date().toISOString().slice(0, 10);
+    if (value && value < today) return;
+    setChapterFormData((prev) => {
+      const timePart =
+        prev.scheduledAt && prev.scheduledAt.includes("T")
+          ? prev.scheduledAt.split("T")[1].slice(0, 5)
+          : "00:00";
+      return {
+        ...prev,
+        scheduledAt: value ? `${value}T${timePart}` : "",
+      };
+    });
+  };
+
+  const handleScheduledTimeChange = (value: string) => {
+    setChapterFormData((prev) => {
+      const datePart =
+        prev.scheduledAt && prev.scheduledAt.includes("T")
+          ? prev.scheduledAt.split("T")[0]
+          : new Date().toISOString().slice(0, 10);
+      const newScheduled = value ? `${datePart}T${value}` : "";
+      // ไม่ auto-correct แล้ว — ให้ผู้ใช้ตั้งเวลาอิสระ แต่ถ้าอยู่ในอดีตจะแสดงคำเตือนและ disabled ปุ่มบันทึก
+      return {
+        ...prev,
+        scheduledAt: newScheduled,
+      };
+    });
+  };
+
+  const isScheduledInPast =
+    chapterFormData.scheduleEnabled &&
+    !!chapterFormData.scheduledAt &&
+    new Date(chapterFormData.scheduledAt) <= new Date();
+
+  // --- Thai Calendar state & helpers ---
+  const [scheduleCalMonth, setScheduleCalMonth] = useState(new Date().getMonth());
+  const [scheduleCalYear, setScheduleCalYear] = useState(new Date().getFullYear());
+
+  const getCalendarDays = (year: number, month: number): (number | null)[] => {
+    const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells: (number | null)[] = [];
+    for (let i = 0; i < firstDayOfWeek; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    return cells;
+  };
+
+  const isCalendarDateInPast = (year: number, month: number, day: number) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(year, month, day);
+    return target < today;
+  };
+
+  const handleCalendarDateSelect = (day: number) => {
+    const dateStr = `${scheduleCalYear}-${String(scheduleCalMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    handleScheduledDateChange(dateStr);
+  };
+
+  const navigateScheduleCalendar = (direction: 1 | -1) => {
+    setScheduleCalMonth((prev) => {
+      let nm = prev + direction;
+      if (nm < 0) {
+        setScheduleCalYear((y) => y - 1);
+        return 11;
+      }
+      if (nm > 11) {
+        setScheduleCalYear((y) => y + 1);
+        return 0;
+      }
+      return nm;
+    });
+  };
+
+  // Format Thai date for calendar display (full month name, CE year)
+  const formatThaiCalendarDate = (isoStr: string) => {
+    if (!isoStr) return "เลือกวันที่";
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "เลือกวันที่";
+    return `${d.getDate()} ${THAI_MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const toggleSelectChapter = (chapterId: number) => {
+    setSelectedChapterIds((prev) =>
+      prev.includes(chapterId)
+        ? prev.filter((id) => id !== chapterId)
+        : [...prev, chapterId],
+    );
+  };
+  const visibleChapters = manga ? getVisibleChapters() : [];
+
+  const isAllChaptersSelected =
+    visibleChapters.length > 0 &&
+    visibleChapters.every((c) => selectedChapterIds.includes(c.id));
+
+  const handleToggleSelectAllChapters = () => {
+    if (!manga) return;
+    if (isAllChaptersSelected) {
+      // ยกเลิกติ๊กเฉพาะตอนที่อยู่ในหน้า/ช่วงที่เห็น
+      setSelectedChapterIds((prev) =>
+        prev.filter((id) => !visibleChapters.some((c) => c.id === id)),
+      );
+    } else {
+      // ติ๊กเพิ่มเฉพาะตอนที่ยังไม่ถูกเลือกในหน้า/ช่วงที่เห็น
+      setSelectedChapterIds((prev) => {
+        const toAdd = visibleChapters
+          .map((c) => c.id)
+          .filter((id) => !prev.includes(id));
+        return [...prev, ...toAdd];
+      });
+    }
+  };
+
+  const applyLocalChapterUpdates = (
+    updater: (chapter: Chapter) => Chapter,
+    filterIds?: number[],
+  ) => {
+    setManga((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        chapters: prev.chapters.map((ch) =>
+          filterIds && !filterIds.includes(ch.id) ? ch : updater(ch),
+        ),
+      };
+    });
+  };
+
+  const handleBulkSetPrice = async () => {
+    if (!manga) {
+      toast.error("ไม่พบมังงะ");
+      return;
+    }
+    if (selectedChapterIds.length === 0) {
+      toast.error("กรุณาเลือกตอนที่ต้องการก่อน");
+      return;
+    }
+    const rawPrice = Number(bulkPriceInput);
+    if (Number.isNaN(rawPrice) || rawPrice < 0) {
+      toast.error("กรุณากำหนดราคาให้ถูกต้อง");
+      return;
+    }
+    const price = Math.round(rawPrice * 100) / 100;
+
+    try {
+      setBulkWorking(true);
+      const sessionToken = localStorage.getItem("session_token") || "";
+      if (!sessionToken) {
+        toast.error("กรุณาเข้าสู่ระบบก่อนจัดการตอน");
+        router.push("/login");
+        return;
+      }
+
+      await Promise.all(
+        selectedChapterIds.map(async (id) => {
+          const res = await fetch(`/api/chapters/${id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "x-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              isLocked: price > 0,
+              priceCoins: price,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "ไม่สามารถอัปเดตราคาตอนได้");
+          }
+        }),
+      );
+
+      applyLocalChapterUpdates(
+        (ch) => ({
+          ...ch,
+          isLocked: price > 0,
+          priceCoins: price,
+        }),
+        selectedChapterIds,
+      );
+
+      toast.success("อัปเดตราคาตอนที่เลือกสำเร็จ");
+      setSelectedChapterIds([]);
+      setBulkPriceInput("");
+    } catch (error) {
+      console.error("Bulk set price failed:", error);
+      toast.error("เกิดข้อผิดพลาดในการอัปเดตราคาตอน");
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const handleBulkPublish = async () => {
+    if (!manga) {
+      toast.error("ไม่พบมังงะ");
+      return;
+    }
+    if (selectedChapterIds.length === 0) {
+      toast.error("กรุณาเลือกตอนที่ต้องการก่อน");
+      return;
+    }
+
+    try {
+      setBulkWorking(true);
+      const sessionToken = localStorage.getItem("session_token") || "";
+      if (!sessionToken) {
+        toast.error("กรุณาเข้าสู่ระบบก่อนจัดการตอน");
+        router.push("/login");
+        return;
+      }
+
+      const now = new Date().toISOString();
+
+      await Promise.all(
+        selectedChapterIds.map(async (id) => {
+          const res = await fetch(`/api/chapters/${id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "x-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              publishedAt: now,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "ไม่สามารถเผยแพร่ตอนได้");
+          }
+        }),
+      );
+
+      applyLocalChapterUpdates(
+        (ch) => ({
+          ...ch,
+          publishedAt: now,
+        }),
+        selectedChapterIds,
+      );
+
+      toast.success("เผยแพร่ตอนที่เลือกสำเร็จ");
+      setSelectedChapterIds([]);
+    } catch (error) {
+      console.error("Bulk publish failed:", error);
+      toast.error("เกิดข้อผิดพลาดในการเผยแพร่ตอน");
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const handleBulkUnpublish = async () => {
+    if (!manga) {
+      toast.error("ไม่พบมังงะ");
+      return;
+    }
+    if (selectedChapterIds.length === 0) {
+      toast.error("กรุณาเลือกตอนที่ต้องการก่อน");
+      return;
+    }
+
+    try {
+      setBulkWorking(true);
+      const sessionToken = localStorage.getItem("session_token") || "";
+      if (!sessionToken) {
+        toast.error("กรุณาเข้าสู่ระบบก่อนจัดการตอน");
+        router.push("/login");
+        return;
+      }
+
+      await Promise.all(
+        selectedChapterIds.map(async (id) => {
+          const res = await fetch(`/api/chapters/${id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "x-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              publishedAt: null,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "ไม่สามารถตั้งเป็นแบบร่างได้");
+          }
+        }),
+      );
+
+      applyLocalChapterUpdates(
+        (ch) => ({
+          ...ch,
+          publishedAt: null,
+        }),
+        selectedChapterIds,
+      );
+
+      toast.success("ตั้งตอนที่เลือกเป็นแบบร่างสำเร็จ");
+      setSelectedChapterIds([]);
+    } catch (error) {
+      console.error("Bulk unpublish failed:", error);
+      toast.error("เกิดข้อผิดพลาดในการตั้งตอนเป็นแบบร่าง");
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!manga) {
+      toast.error("ไม่พบมังงะ");
+      return;
+    }
+    if (selectedChapterIds.length === 0) {
+      toast.error("กรุณาเลือกตอนที่ต้องการก่อน");
+      return;
+    }
+
+    try {
+      setBulkWorking(true);
+      const sessionToken = localStorage.getItem("session_token") || "";
+      if (!sessionToken) {
+        toast.error("กรุณาเข้าสู่ระบบก่อนจัดการตอน");
+        router.push("/login");
+        return;
+      }
+
+      await Promise.all(
+        selectedChapterIds.map(async (id) => {
+          const res = await fetch(`/api/chapters/${id}`, {
+            method: "DELETE",
+            headers: {
+              "x-session-token": sessionToken,
+            },
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || "ไม่สามารถลบตอนบางตอนได้");
+          }
+        }),
+      );
+
+      // ลบออกจาก state ในหน้า
+      setManga((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          chapters: prev.chapters.filter(
+            (ch) => !selectedChapterIds.includes(ch.id),
+          ),
+          _count: {
+            ...prev._count,
+            chapters: prev._count.chapters - selectedChapterIds.length,
+          },
+        };
+      });
+
+      toast.success("ลบตอนที่เลือกสำเร็จ");
+      setSelectedChapterIds([]);
+    } catch (error) {
+      console.error("Bulk delete failed:", error);
+      toast.error("เกิดข้อผิดพลาดในการลบตอน");
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const openBulkDeleteDialog = () => {
+    if (!manga) {
+      toast.error("ไม่พบมังงะ");
+      return;
+    }
+    if (selectedChapterIds.length === 0) {
+      toast.error("กรุณาเลือกตอนที่ต้องการก่อน");
+      return;
+    }
+    setDeleteDialog({
+      mode: "bulk",
+      count: selectedChapterIds.length,
+    });
+  };
+
+  const openSingleDeleteDialog = (chapterId: number) => {
+    if (!manga) {
+      toast.error("ไม่พบมังงะ");
+      return;
+    }
+    const chapter = manga.chapters.find((ch) => ch.id === chapterId);
+    if (!chapter) {
+      toast.error("ไม่พบตอนที่ต้องการลบ");
+      return;
+    }
+    setDeleteDialog({
+      mode: "single",
+      chapterId,
+      chapterNumber: chapter.number,
+      chapterTitle: chapter.title,
+    });
+  };
+
+  const handleConfirmDeleteDialog = async () => {
+    if (!deleteDialog) return;
+    const currentDialog = deleteDialog;
+    setDeleteDialog(null);
+
+    if (currentDialog.mode === "bulk") {
+      await handleBulkDelete();
+    } else {
+      await handleDeleteSingleChapter(currentDialog.chapterId);
+    }
+  };
+
+  const handleDeleteSingleChapter = async (chapterId: number) => {
+    if (!manga) {
+      toast.error("ไม่พบมังงะ");
+      return;
+    }
+
+    try {
+      const sessionToken = localStorage.getItem("session_token") || "";
+      if (!sessionToken) {
+        toast.error("กรุณาเข้าสู่ระบบก่อนจัดการตอน");
+        router.push("/login");
+        return;
+      }
+
+      const res = await fetch(`/api/chapters/${chapterId}`, {
+        method: "DELETE",
+        headers: {
+          "x-session-token": sessionToken,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "ไม่สามารถลบตอนได้");
+      }
+
+      // อัปเดต state บนหน้า
+      setManga((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          chapters: prev.chapters.filter((ch) => ch.id !== chapterId),
+          _count: {
+            ...prev._count,
+            chapters: Math.max(prev._count.chapters - 1, 0),
+          },
+        };
+      });
+      setSelectedChapterIds((prev) => prev.filter((id) => id !== chapterId));
+
+      toast.success("ลบตอนสำเร็จ");
+    } catch (error) {
+      console.error("Delete single chapter failed:", error);
+      toast.error("เกิดข้อผิดพลาดในการลบตอน");
+    }
+  };
 
   // Generate random slug for chapter
   const generateRandomSlug = (): string => {
@@ -643,11 +1258,61 @@ export default function EditMangaPage() {
     }
   }, [manga, activeTab, activeStatsTab, selectedMonth, selectedYear, authLoading]);
 
+  // ปิด dropdown หมวดหมู่หลัก/รอง, ระดับเนื้อหา, ประเภทเนื้อหา เมื่อคลิกนอกกรอบ
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+
+      if (
+        showMainGenreDropdown &&
+        mainGenreDropdownRef.current &&
+        target &&
+        !mainGenreDropdownRef.current.contains(target)
+      ) {
+        setShowMainGenreDropdown(false);
+      }
+
+      if (
+        showSubGenreDropdown &&
+        subGenreDropdownRef.current &&
+        target &&
+        !subGenreDropdownRef.current.contains(target)
+      ) {
+        setShowSubGenreDropdown(false);
+      }
+
+      if (
+        showRatingDropdown &&
+        ratingDropdownRef.current &&
+        target &&
+        !ratingDropdownRef.current.contains(target)
+      ) {
+        setShowRatingDropdown(false);
+      }
+
+      if (
+        showContentTypeDropdown &&
+        contentTypeDropdownRef.current &&
+        target &&
+        !contentTypeDropdownRef.current.contains(target)
+      ) {
+        setShowContentTypeDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [
+    showMainGenreDropdown,
+    showSubGenreDropdown,
+    showRatingDropdown,
+    showContentTypeDropdown,
+  ]);
+
   useEffect(() => {
     if (manga && genres.length > 0) {
-      const mainGenresConfig = genres.filter((g) => g.type === "main");
-      const subGenresConfig = genres.filter((g) => g.type === "sub");
-      
       // ใช้ genreSlugs จาก manga (JSON array)
       const genreSlugs: string[] = Array.isArray(manga.genreSlugs)
         ? (manga.genreSlugs as string[])
@@ -662,17 +1327,22 @@ export default function EditMangaPage() {
         status: manga.status,
         visibility: manga.visibility,
         isMature: manga.isMature,
-        mainGenreSlug: "", // ไม่ใช้แล้ว แต่เก็บไว้เพื่อ backward compatibility
-        subGenreSlug: "", // ไม่ใช้แล้ว แต่เก็บไว้เพื่อ backward compatibility
+        contentType: manga.contentType || "jp-manga",
+        mainGenreSlug: genreSlugs[0] || "",
+        subGenreSlug: genreSlugs[1] || "",
       });
       // เก็บ cover URL จาก DB เพื่อกลับไปใช้เมื่อตรวจพบ 18+
       originalCoverRef.current = currentCoverUrl || null;
       previousCoverRef.current = currentCoverUrl || null;
       setCoverPreview(null); // Reset preview เมื่อโหลดข้อมูลจาก DB
-      setSelectedGenres(genreSlugs);
-      // Set tags from manga
-      if (manga.tags) {
-        setTags((manga.tags as any[]).map((t) => t.tag.name));
+      // เก็บเฉพาะ 2 ตัวแรก: [หมวดหมู่หลัก, หมวดหมู่รอง]
+      setSelectedGenres(genreSlugs.slice(0, 2));
+      // Set tags from manga - convert slugs back to display names
+      if (manga.tagSlugs && Array.isArray(manga.tagSlugs) && manga.tagSlugs.length > 0) {
+        // For now, use slugs as display names (can be improved later)
+        setTags(manga.tagSlugs);
+      } else {
+        setTags([]);
       }
       setCoverError(null);
       setCoverBlocked(false);
@@ -902,7 +1572,8 @@ export default function EditMangaPage() {
           status: formData.status,
           visibility: formData.visibility,
           isMature: formData.isMature,
-          genreSlugs: selectedGenres,
+          contentType: formData.contentType || undefined,
+          genreSlugs: [formData.mainGenreSlug, formData.subGenreSlug].filter(Boolean),
           tags: tags,
         }),
       });
@@ -984,6 +1655,12 @@ export default function EditMangaPage() {
       toast.error("ไม่พบมังงะ");
       return;
     }
+
+    // ห้ามสร้างตอนถ้าตั้งเวลาเผยแพร่ในอดีต
+    if (chapterFormData.scheduleEnabled && chapterFormData.scheduledAt && new Date(chapterFormData.scheduledAt) <= new Date()) {
+      toast.error("ไม่สามารถตั้งเวลาเผยแพร่ในอดีตได้ กรุณาเลือกวันเวลาในอนาคต");
+      return;
+    }
     
     if (chapterImages.length === 0) {
       toast.error("กรุณาเลือกรูปภาพสำหรับตอน");
@@ -1032,6 +1709,13 @@ export default function EditMangaPage() {
 
       // Create chapter first with random slug
       const chapterSlug = await generateUniqueChapterSlug();
+      // คำนวณหน้าที่ตอนใหม่ควรไปอยู่ (ท้ายรายการเสมอ)
+      const newTotalChapters =
+        (manga?.chapters?.length ?? 0) + 1;
+      const targetPage = Math.max(
+        1,
+        Math.ceil(newTotalChapters / chapterPageSize),
+      );
       const chapterResponse = await fetch(`/api/manga/${manga.id}/chapters`, {
         method: "POST",
         headers: {
@@ -1042,9 +1726,14 @@ export default function EditMangaPage() {
           title: chapterFormData.title || `ตอนที่ ${chapterFormData.number}`,
           number: chapterFormData.number,
           slug: chapterSlug,
-          isLocked: chapterFormData.price > 0,
-          priceCoins: chapterFormData.price,
-          publishedAt: chapterFormData.status === "published" ? new Date().toISOString() : undefined,
+          isLocked: getCurrentPrice() > 0,
+          priceCoins: getCurrentPrice(),
+          publishedAt:
+            chapterFormData.status === "published"
+              ? chapterFormData.scheduleEnabled && chapterFormData.scheduledAt
+                ? new Date(chapterFormData.scheduledAt).toISOString()
+                : new Date().toISOString()
+              : undefined,
         }),
       });
 
@@ -1125,6 +1814,8 @@ export default function EditMangaPage() {
       toast.success("สร้างตอนสำเร็จ 👌");
       setShowAddChapterModal(false);
       setUploadedPages(new Set());
+      // ไปยังหน้าที่มีตอนใหม่ แล้วค่อย refresh ข้อมูล
+      setChapterPage(targetPage);
       await fetchManga(); // Refresh manga data
     } catch (error) {
       console.error("Failed to create chapter:", error);
@@ -1159,20 +1850,56 @@ export default function EditMangaPage() {
       if (data.success && data.data?.chapter) {
         const chapter = data.data.chapter;
         
-        // Set form data
+        // Set form data — แยก 3 สถานะ: ซ่อน / เผยแพร่แล้ว / ตั้งเวลาในอนาคต
+        const pubDate = chapter.publishedAt ? new Date(chapter.publishedAt) : null;
+        const isScheduledFuture = pubDate ? pubDate > new Date() : false;
+
+        // Format scheduledAt เป็น local time (YYYY-MM-DDTHH:mm)
+        let formattedScheduledAt = "";
+        if (isScheduledFuture && pubDate) {
+          const year = pubDate.getFullYear();
+          const month = String(pubDate.getMonth() + 1).padStart(2, "0");
+          const day = String(pubDate.getDate()).padStart(2, "0");
+          const hours = String(pubDate.getHours()).padStart(2, "0");
+          const minutes = String(pubDate.getMinutes()).padStart(2, "0");
+          formattedScheduledAt = `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // ไม่มี publishedAt → ซ่อน (draft)
+        // มี publishedAt & อยู่ในอนาคต → ตั้งเวลาเผยแพร่ (schedule)
+        // มี publishedAt & ผ่านไปแล้ว → เผยแพร่ทันที (now)
         setChapterFormData({
           title: chapter.title,
           number: chapter.number,
           price: chapter.priceCoins,
           status: chapter.publishedAt ? "published" : "draft",
+          scheduleEnabled: isScheduledFuture,
+          scheduledAt: formattedScheduledAt,
         });
+        // Sync price input value & paid mode
+        setPriceInputValue(chapter.priceCoins.toString());
+        setIsPaidMode(chapter.priceCoins > 0);
+
+        // Sync calendar view
+        if (isScheduledFuture && pubDate) {
+          setScheduleCalMonth(pubDate.getMonth());
+          setScheduleCalYear(pubDate.getFullYear());
+        } else {
+          const now = new Date();
+          setScheduleCalMonth(now.getMonth());
+          setScheduleCalYear(now.getFullYear());
+        }
 
         // Load existing pages as previews
         const previews = chapter.pages
           .sort((a: any, b: any) => a.pageNo - b.pageNo)
-          .map((page: any) => page.imageUrl);
+          .map((page: any) => page.imageUrl as string);
         
         setImagePreviews(previews);
+        // แสดงสถานะว่ารูปเดิมทั้งหมดถูกอัปโหลดไว้แล้ว (ติ๊กถูกเริ่มต้น)
+        setUploadedPages(
+          new Set(previews.map((_preview: string, idx: number) => idx)),
+        );
         setChapterImages([]); // No files, just previews from existing pages
         setEditingChapterId(chapterId);
         setChapterType("single"); // Edit mode is always single
@@ -1191,6 +1918,12 @@ export default function EditMangaPage() {
   const handleUpdateChapter = async () => {
     if (!manga) {
       toast.error("ไม่พบมังงะ");
+      return;
+    }
+
+    // ห้ามอัปเดตตอนถ้าตั้งเวลาเผยแพร่ในอดีต
+    if (chapterFormData.scheduleEnabled && chapterFormData.scheduledAt && new Date(chapterFormData.scheduledAt) <= new Date()) {
+      toast.error("ไม่สามารถตั้งเวลาเผยแพร่ในอดีตได้ กรุณาเลือกวันเวลาในอนาคต");
       return;
     }
     
@@ -1239,9 +1972,14 @@ export default function EditMangaPage() {
         body: JSON.stringify({
           title: chapterFormData.title || `ตอนที่ ${chapterFormData.number}`,
           number: chapterFormData.number,
-          isLocked: chapterFormData.price > 0,
-          priceCoins: chapterFormData.price,
-          publishedAt: chapterFormData.status === "published" ? new Date().toISOString() : undefined,
+          isLocked: getCurrentPrice() > 0,
+          priceCoins: getCurrentPrice(),
+          publishedAt:
+            chapterFormData.status === "published"
+              ? chapterFormData.scheduleEnabled && chapterFormData.scheduledAt
+                ? new Date(chapterFormData.scheduledAt).toISOString()
+                : new Date().toISOString()
+              : null,
         }),
       });
 
@@ -1250,12 +1988,22 @@ export default function EditMangaPage() {
         throw new Error(chapterData.error || "Failed to update chapter");
       }
 
-      // Delete all existing pages
-      const existingPagesResponse = await fetch(`/api/chapters/${editingChapterId}/pages`);
+      // โหลดหน้าปัจจุบันทั้งหมดไว้ก่อน เพื่อใช้ลบ page record เก่า + เคลียร์รูปที่ไม่ได้ใช้แล้ว
+      const existingPagesResponse = await fetch(
+        `/api/chapters/${editingChapterId}/pages`,
+      );
       const existingPagesData = await existingPagesResponse.json();
-      
-      if (existingPagesData.success && existingPagesData.data?.pages) {
-        for (const page of existingPagesData.data.pages) {
+      const oldPages: Array<{ id: number; imageUrl: string }> =
+        existingPagesData.success && existingPagesData.data?.pages
+          ? existingPagesData.data.pages.map((p: any) => ({
+              id: p.id,
+              imageUrl: p.imageUrl as string,
+            }))
+          : [];
+
+      // ลบ page record เก่าทั้งหมดออกจากฐานข้อมูล (ตอนจะสร้างใหม่จาก imagePreviews ด้านล่าง)
+      if (oldPages.length > 0) {
+        for (const page of oldPages) {
           try {
             await fetch(`/api/pages/${page.id}`, {
               method: "DELETE",
@@ -1274,6 +2022,7 @@ export default function EditMangaPage() {
       const chapterNumber = chapterFormData.number;
       setUploadingProgress({ current: 0, total: imagePreviews.length });
       setUploadedPages(new Set());
+      const newImageUrls: string[] = [];
 
       for (let index = 0; index < imagePreviews.length; index++) {
         const preview = imagePreviews[index];
@@ -1329,12 +2078,37 @@ export default function EditMangaPage() {
           throw new Error(errorData.error || `Failed to create page ${index + 1}`);
         }
 
+        newImageUrls.push(imageUrl);
+
         // อัพเดท progress และติ๊กถูก
         setUploadingProgress({ current: index + 1, total: imagePreviews.length });
         setUploadedPages((prev) => new Set(prev).add(index));
       }
 
       setUploadingProgress(null);
+
+      // เคลียร์รูปเก่าที่ไม่ได้ใช้แล้ว (ทั้งใน S3 และไม่ให้ค้างในระบบ)
+      if (oldPages.length > 0) {
+        const oldImageUrls = oldPages.map((p) => p.imageUrl);
+        const urlsToDelete = oldImageUrls.filter(
+          (url) => !newImageUrls.includes(url),
+        );
+
+        if (urlsToDelete.length > 0) {
+          try {
+            await fetch("/api/uploads/cleanup", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-session-token": sessionToken,
+              },
+              body: JSON.stringify({ urls: urlsToDelete }),
+            });
+          } catch (err) {
+            console.error("Failed to cleanup old images:", err);
+          }
+        }
+      }
 
       toast.success("แก้ไขข้อมูลตอนแล้ว 👌");
       setShowAddChapterModal(false);
@@ -1552,8 +2326,8 @@ export default function EditMangaPage() {
                 title: chapterData.title,
                 number: chapterData.number,
                 slug: chapterSlug,
-                isLocked: chapterFormData.price > 0,
-                priceCoins: chapterFormData.price,
+                isLocked: getCurrentPrice() > 0,
+                priceCoins: getCurrentPrice(),
                 publishedAt:
                   chapterFormData.status === "published"
                     ? new Date().toISOString()
@@ -1806,7 +2580,7 @@ export default function EditMangaPage() {
             <span>อัปเดต: {formatThaiDate(manga.updatedAt)}</span>
           </div>
           <Link
-            href={`/manga/${manga.slug}`}
+            href={`/comic/${manga.slug}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 text-[11px] font-medium transition-colors"
@@ -1901,13 +2675,17 @@ export default function EditMangaPage() {
                 <h3 className="text-base font-semibold text-foreground mb-2">ข้อมูลพื้นฐาน</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
                       ชื่อเรื่อง <span className="text-red-500">*</span>
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({formData.title.length}/120)
+                      </span>
                     </label>
                     <input
                       type="text"
                       required
+                      maxLength={120}
                       value={formData.title}
                       onChange={(e) => {
                         setTitleError(null);
@@ -1926,10 +2704,14 @@ export default function EditMangaPage() {
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-2">
                       ชื่อเรื่องต้นฉบับ <span className="text-red-500">*</span>
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({formData.originalTitle.length}/120)
+                      </span>
                     </label>
                     <input
                       type="text"
                       required
+                      maxLength={120}
                       value={formData.originalTitle}
                       onChange={(e) => {
                         setOriginalTitleError(null);
@@ -1948,139 +2730,283 @@ export default function EditMangaPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  <div ref={mainGenreDropdownRef}>
                     <label className="block text-sm font-medium text-foreground mb-2">
                       หมวดหมู่หลัก <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <select
-                        required
-                        value={selectedGenres.find((id) => mainGenres.some((g) => g.slug === id)) || ""}
-                        onChange={(e) => {
-                          const genreSlug = e.target.value;
-                          if (genreSlug) {
-                            const currentMain = selectedGenres.find((id) => mainGenres.some((g) => g.slug === id));
-                            setSelectedGenres([
-                              ...selectedGenres.filter((id) => id !== genreSlug && id !== currentMain),
-                              ...(genreSlug ? [genreSlug] : []),
-                            ]);
-                          }
-                        }}
-                        className={cn(
-                          "w-full px-4 py-2.5 pr-10",
-                          "border border-border rounded-lg",
-                          "bg-background text-foreground",
-                          "appearance-none cursor-pointer",
-                          "focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                          "hover:border-orange-500/50 transition-colors",
-                          "text-sm"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowMainGenreDropdown((open) => !open)
+                        }
+                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                      >
+                        <span className={cn(
+                          "text-sm",
+                          formData.mainGenreSlug ? "text-foreground" : "text-muted-foreground"
                         )}>
-                        <option value="" className="bg-background text-muted-foreground">เลือกหมวดหมู่หลัก</option>
-                        {mainGenres.map((genre) => (
-                          <option key={genre.slug} value={genre.slug} className="bg-background text-foreground">
-                            {genre.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg
-                          className="w-5 h-5 text-muted-foreground"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
-                        </svg>
-                      </div>
+                          {(() => {
+                            const selected = mainGenres.find(
+                              (g) => g.slug === formData.mainGenreSlug,
+                            );
+                            return selected ? selected.name : "เลือกหมวดหมู่หลัก";
+                          })()}
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                      </button>
+
+                      {showMainGenreDropdown && (
+                        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+                          {mainGenres.map((genre) => {
+                            const isSelected =
+                              formData.mainGenreSlug === genre.slug;
+                            return (
+                              <button
+                                key={genre.slug}
+                                type="button"
+                                onClick={() => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    mainGenreSlug: genre.slug,
+                                  }));
+                                  setShowMainGenreDropdown(false);
+                                }}
+                                className={cn(
+                                  "w-full px-3 py-2.5 flex items-center justify-between text-sm",
+                                  "hover:bg-muted/70",
+                                  isSelected
+                                    ? "bg-muted text-foreground"
+                                    : "text-foreground",
+                                )}
+                              >
+                                <span>{genre.name}</span>
+                                {isSelected && (
+                                  <Check className="w-4 h-4 text-orange-500" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div>
+                  <div ref={subGenreDropdownRef}>
                     <label className="block text-sm font-medium text-foreground mb-2">
                       หมวดหมู่รอง
                     </label>
                     <div className="relative">
-                      <select
-                        value={selectedGenres.find((id) => subGenres.some((g) => g.slug === id)) || ""}
-                        onChange={(e) => {
-                          const genreSlug = e.target.value;
-                          if (genreSlug) {
-                            const currentSub = selectedGenres.find((id) => subGenres.some((g) => g.slug === id));
-                            setSelectedGenres([
-                              ...selectedGenres.filter((id) => id !== genreSlug && id !== currentSub),
-                              ...(genreSlug ? [genreSlug] : []),
-                            ]);
-                          }
-                        }}
-                        className={cn(
-                          "w-full px-4 py-2.5 pr-10",
-                          "border border-border rounded-lg",
-                          "bg-background text-foreground",
-                          "appearance-none cursor-pointer",
-                          "focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                          "hover:border-orange-500/50 transition-colors",
-                          "text-sm"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowSubGenreDropdown((open) => !open)
+                        }
+                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                      >
+                        <span className={cn(
+                          "text-sm",
+                          formData.subGenreSlug ? "text-foreground" : "text-muted-foreground"
                         )}>
-                        <option value="" disabled className="bg-background text-muted-foreground">
-                          {subGenres.length === 0 ? "กำลังโหลด..." : "เลือกหมวดหมู่รอง"}
-                        </option>
-                        {subGenres.length === 0 ? (
-                          <option value="" disabled className="bg-background text-muted-foreground">
-                            ไม่มีข้อมูล กรุณา seed ข้อมูล genres
-                          </option>
-                        ) : (
-                          subGenres.map((genre) => (
-                            <option key={genre.slug} value={genre.slug} className="bg-background text-foreground">
-                              {genre.name}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg
-                          className="w-5 h-5 text-muted-foreground"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
-                        </svg>
-                      </div>
+                          {(() => {
+                            const selected = subGenres.find(
+                              (g) => g.slug === formData.subGenreSlug,
+                            );
+                            if (!selected) {
+                              return subGenres.length === 0
+                                ? "กำลังโหลด..."
+                                : "เลือกหมวดหมู่รอง";
+                            }
+                            return selected.name;
+                          })()}
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                      </button>
+
+                      {showSubGenreDropdown && (
+                        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+                          {subGenres.length === 0 ? (
+                            <div className="px-3 py-2.5 text-sm text-muted-foreground">
+                              ไม่มีข้อมูล กรุณา seed ข้อมูล genres
+                            </div>
+                          ) : (
+                            subGenres.map((genre) => {
+                              const isSelected =
+                                formData.subGenreSlug === genre.slug;
+                              return (
+                                <button
+                                  key={genre.slug}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      subGenreSlug: genre.slug,
+                                    }));
+                                    setShowSubGenreDropdown(false);
+                                  }}
+                                  className={cn(
+                                    "w-full px-3 py-2.5 flex items-center justify-between text-sm",
+                                    "hover:bg-muted/70 text-foreground",
+                                    isSelected
+                                      ? "bg-muted text-foreground"
+                                      : "",
+                                  )}
+                                >
+                                  <span>{genre.name}</span>
+                                  {isSelected && (
+                                    <Check className="w-4 h-4 text-orange-500" />
+                                  )}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  <div ref={ratingDropdownRef}>
                     <label className="block text-sm font-medium text-foreground mb-2">
                       ระดับของเนื้อหา <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      required
-                      value={formData.isMature ? "mature" : "general"}
-                      onChange={(e) => setFormData({ ...formData, isMature: e.target.value === "mature" })}
-                      className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20">
-                      <option value="general">ทั่วไป (PG)</option>
-                      <option value="mature">18+</option>
-                    </select>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowRatingDropdown((open) => !open)
+                        }
+                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      >
+                        <span className="text-sm text-foreground">
+                          {formData.isMature ? "18+" : "ทั่วไป"}
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                      </button>
+
+                      {showRatingDropdown && (
+                        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg">
+                          {[
+                            { value: "general", label: "ทั่วไป", isMature: false },
+                            { value: "mature", label: "18+", isMature: true },
+                          ].map((opt) => {
+                            const isSelected =
+                              formData.isMature === opt.isMature;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    isMature: opt.isMature,
+                                  }));
+                                  setShowRatingDropdown(false);
+                                }}
+                                className={cn(
+                                  "w-full px-3 py-2.5 flex items-center justify-between text-sm",
+                                  "hover:bg-muted/70",
+                                  isSelected
+                                    ? "bg-muted text-foreground"
+                                    : "text-foreground",
+                                )}
+                              >
+                                <span>{opt.label}</span>
+                                {isSelected && (
+                                  <Check className="w-4 h-4 text-orange-500" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
+                  <div ref={contentTypeDropdownRef}>
                     <label className="block text-sm font-medium text-foreground mb-2">
                       ประเภทเนื้อหา <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      required
-                      className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20">
-                      <option value="translated">การ์ตูนแปล</option>
-                      <option value="original">การ์ตูนต้นฉบับ</option>
-                    </select>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowContentTypeDropdown((open) => !open)
+                        }
+                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      >
+                        <div className="flex items-center gap-2">
+                          {(() => {
+                            const selected = contentTypeOptions.find(
+                              (opt) => opt.value === formData.contentType,
+                            );
+                            if (!selected) {
+                              return (
+                                <>
+                                  <Globe2 className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-sm text-muted-foreground">
+                                    เลือกประเภทเนื้อหา
+                                  </span>
+                                </>
+                              );
+                            }
+                            return (
+                              <>
+                                <img
+                                  src={selected.iconUrl}
+                                  alt={selected.label}
+                                  className="w-4 h-4 rounded-full object-cover"
+                                />
+                                <span className="text-sm text-foreground">
+                                  {selected.label}
+                                </span>
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                      </button>
+
+                      {showContentTypeDropdown && (
+                        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+                          {contentTypeOptions.map((opt) => {
+                            const isSelected =
+                              formData.contentType === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    contentType: opt.value,
+                                  }));
+                                  setShowContentTypeDropdown(false);
+                                }}
+                                className={cn(
+                                  "w-full px-3 py-2.5 flex items-center gap-2 text-sm",
+                                  "hover:bg-muted/70",
+                                  isSelected
+                                    ? "bg-muted text-foreground"
+                                    : "text-foreground",
+                                )}
+                              >
+                                <img
+                                  src={opt.iconUrl}
+                                  alt={opt.label}
+                                  className="w-4 h-4 rounded-full object-cover"
+                                />
+                                <span className="flex-1 text-left">
+                                  {opt.label}
+                                </span>
+                                {isSelected && (
+                                  <Check className="w-4 h-4 text-orange-500" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2091,21 +3017,16 @@ export default function EditMangaPage() {
                   ข้อมูลเบื้องต้น/แนะนำเรื่อง/เรื่องย่อ
                 </h3>
                 <p className="text-xs text-muted-foreground mb-2">
-                  จำกัดไม่เกิน 2000 ตัวอักษร ({formData.description.length}/2000)
+                  จำกัดไม่เกิน 2000 ตัวอักษร
                 </p>
-                <textarea
+                <RichTextEditor
                   value={formData.description}
-                  onChange={(e) => {
+                  onChange={(html) => {
                     setDescriptionError(null);
-                    setFormData({ ...formData, description: e.target.value });
+                    setFormData((prev) => ({ ...prev, description: html }));
                   }}
                   maxLength={2000}
-                  rows={8}
                   placeholder="พิมพ์เนื้อหาตรงนี้"
-                  className={cn(
-                    "w-full px-4 py-3 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 resize-none",
-                    descriptionError ? "border-red-500" : "border-border"
-                  )}
                 />
                 {descriptionError && (
                   <p className="mt-1 text-xs text-red-500">{descriptionError}</p>
@@ -2247,7 +3168,11 @@ export default function EditMangaPage() {
                   number: nextNumber,
                   price: 0,
                   status: "published",
+                  scheduleEnabled: false,
+                  scheduledAt: "",
                 });
+                setPriceInputValue("0");
+                setIsPaidMode(false);
                 setChapterImages([]);
                 setImagePreviews([]);
                 setShowAddChapterModal(true);
@@ -2267,29 +3192,156 @@ export default function EditMangaPage() {
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <select className="px-3 py-2 border border-border rounded-lg bg-background text-sm">
-                  <option value="50">แสดง 50 รายการ</option>
-                  <option value="20">แสดง 20 รายการ</option>
-                  <option value="10">แสดง 10 รายการ</option>
-                </select>
-                <select className="px-3 py-2 border border-border rounded-lg bg-background text-sm">
-                  <option value="asc">เรียงลำดับตอนจากน้อยไปมาก</option>
-                  <option value="desc">เรียงลำดับตอนจากมากไปน้อย</option>
-                </select>
+                {/* จำนวนรายการต่อหน้า (ใช้ popup แบบเดียวกันทุกที่) */}
+                <PageSizeSelect
+                  value={chapterPageSize}
+                  onChange={(newSize) => {
+                    setChapterPageSize(newSize);
+                    setChapterPage(1); // เปลี่ยนจำนวนต่อหน้า → กลับไปหน้าแรก
+                  }}
+                  options={[50, 100, 500, 1000]}
+                />
+
+                {/* การเรียงลำดับตอน */}
+                <OrderSelect
+                  value={chapterSortOrder}
+                  onChange={(val) => setChapterSortOrder(val)}
+                />
               </div>
-              <div className="flex items-center gap-2">
-                <button className="p-2 hover:bg-muted rounded-lg transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
+
+              {/* สรุปรายการที่กำลังแสดงอยู่ */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {manga && manga.chapters.length > 0 && (
+                  <span>
+                    แสดง{" "}
+                    {Math.min(
+                      manga.chapters.length,
+                      (chapterPage - 1) * chapterPageSize + 1,
+                    )}{" "}
+                    -{" "}
+                    {Math.min(chapterPage * chapterPageSize, manga.chapters.length)}{" "}
+                    จาก {manga.chapters.length} ตอน
+                  </span>
+                )}
               </div>
             </div>
+
+            {manga && selectedChapterIds.length > 0 && (
+              <div className="px-4 py-3 border-b border-orange-300 bg-orange-50/80 dark:bg-orange-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <FileStack className="w-4 h-4 text-orange-500" />
+                  <span className="font-medium text-foreground">
+                    เลือกแล้ว {selectedChapterIds.length} ตอน
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+                  <div className="flex items-center gap-2 bg-background/80 border border-orange-200 rounded-lg px-2 py-1">
+                    <span className="whitespace-nowrap">กำหนดราคา:</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={bulkPriceInput}
+                      onChange={(e) => {
+                        let v = e.target.value;
+                        // รองรับทั้ง . และ , เป็นทศนิยม
+                        if (v === "" || v === "." || v === ",") {
+                          setBulkPriceInput(v);
+                          return;
+                        }
+                        v = v.replace(",", ".");
+                        if (v.match(/^\d*\.?\d{0,2}$/)) {
+                          setBulkPriceInput(v);
+                        }
+                      }}
+                      className="w-20 px-2 py-1 border border-border rounded-md bg-background text-xs sm:text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleBulkSetPrice}
+                      disabled={bulkWorking}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs sm:text-sm transition-colors",
+                        bulkWorking
+                          ? "bg-muted text-muted-foreground cursor-not-allowed"
+                          : "bg-orange-500 text-white hover:bg-orange-600",
+                      )}
+                    >
+                      {bulkWorking ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" />
+                      ) : (
+                        <Coins className="w-3 h-3" />
+                      )}
+                      <span>บันทึก</span>
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleBulkPublish}
+                    disabled={bulkWorking}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-md transition-colors",
+                      bulkWorking
+                        ? "bg-muted text-muted-foreground cursor-not-allowed"
+                        : "bg-green-500 text-white hover:bg-green-600",
+                    )}
+                  >
+                    <CheckCircle className="w-3 h-3" />
+                    <span>เผยแพร่</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkUnpublish}
+                    disabled={bulkWorking}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-md transition-colors",
+                      bulkWorking
+                        ? "bg-muted text-muted-foreground cursor-not-allowed"
+                        : "bg-yellow-500 text-white hover:bg-yellow-600",
+                    )}
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>ตั้งเป็นแบบร่าง</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openBulkDeleteDialog}
+                    disabled={bulkWorking}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-md transition-colors",
+                      bulkWorking
+                        ? "bg-muted text-muted-foreground cursor-not-allowed"
+                        : "bg-red-500 text-white hover:bg-red-600",
+                    )}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>ลบตอน</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-muted/30 border-b border-border">
                   <tr>
                     <th className="text-left p-4 font-medium text-sm">
-                      <input type="checkbox" className="rounded" />
+                      <label className="inline-flex items-center cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={isAllChaptersSelected}
+                          onChange={handleToggleSelectAllChapters}
+                        />
+                        <span
+                          className={cn(
+                            "w-4 h-4 rounded-md border border-border bg-background flex items-center justify-center transition-colors",
+                            "peer-checked:border-orange-500 peer-checked:bg-orange-500",
+                          )}
+                        >
+                          <Check className="w-3 h-3 text-background opacity-0 peer-checked:opacity-100 transition-opacity" />
+                        </span>
+                      </label>
                     </th>
                     <th className="text-left p-4 font-medium text-sm">ลำดับตอน</th>
                     <th className="text-left p-4 font-medium text-sm">ชื่อตอน</th>
@@ -2310,10 +3362,33 @@ export default function EditMangaPage() {
                       </td>
                     </tr>
                   ) : (
-                    manga.chapters.map((chapter) => (
-                      <tr key={chapter.id} className="border-b border-border hover:bg-muted/20">
+                    visibleChapters.map((chapter) => (
+                      <tr
+                        key={chapter.id}
+                        className={cn(
+                          "border-b border-border transition-colors",
+                          selectedChapterIds.includes(chapter.id)
+                            ? "bg-orange-50/70 dark:bg-orange-950/40"
+                            : "hover:bg-muted/20",
+                        )}
+                      >
                         <td className="p-4">
-                          <input type="checkbox" className="rounded" />
+                          <label className="inline-flex items-center cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={selectedChapterIds.includes(chapter.id)}
+                              onChange={() => toggleSelectChapter(chapter.id)}
+                            />
+                            <span
+                              className={cn(
+                                "w-4 h-4 rounded-md border border-border bg-background flex items-center justify-center transition-colors",
+                                "peer-checked:border-orange-500 peer-checked:bg-orange-500",
+                              )}
+                            >
+                              <Check className="w-3 h-3 text-background opacity-0 peer-checked:opacity-100 transition-opacity" />
+                            </span>
+                          </label>
                         </td>
                         <td className="p-4 text-sm">{chapter.number}</td>
                         <td className="p-4 text-sm font-medium">{chapter.title}</td>
@@ -2321,18 +3396,54 @@ export default function EditMangaPage() {
                         <td className="p-4 text-sm">0</td>
                         <td className="p-4 text-sm text-orange-500 font-medium">0</td>
                         <td className="p-4">
-                          <span className="px-2.5 py-1 bg-green-500 text-white text-xs rounded-full">
-                            เผยแพร่
-                          </span>
+                          {chapter.publishedAt ? (
+                            new Date(chapter.publishedAt) > new Date() ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="px-2.5 py-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/40 text-xs rounded-full">
+                                  รอเผยแพร่
+                                </span>
+                                <span className="text-[11px] text-yellow-500/70 pl-1">
+                                  {formatThaiDate(chapter.publishedAt)}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="px-2.5 py-1 bg-green-500 text-white text-xs rounded-full">
+                                เผยแพร่
+                              </span>
+                            )
+                          ) : (
+                            <span className="px-2.5 py-1 bg-muted text-muted-foreground text-xs rounded-full">
+                              ซ่อน
+                            </span>
+                          )}
                         </td>
                         <td className="p-4 text-sm text-muted-foreground">
-                          {formatThaiDate(chapter.updatedAt)}
+                          {chapter.publishedAt
+                            ? formatThaiDate(chapter.publishedAt)
+                            : formatThaiDate(chapter.updatedAt)}
                         </td>
                         <td className="p-4 text-sm">
-                          {chapter.isLocked ? `${chapter.priceCoins} เหรียญ` : "อ่านฟรี"}
+                          {chapter.isLocked ? (
+                            <div className="flex items-center gap-1.5 text-orange-500 font-medium">
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-orange-500/10">
+                                <Coins className="w-3.5 h-3.5" />
+                              </span>
+                              <span className="text-[13px] text-foreground">
+                                {chapter.priceCoins.toLocaleString("th-TH", {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 2,
+                                })}{" "}
+                                เหรียญ
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="inline-block px-3 py-1 rounded-full bg-gray-50 text-xs font-medium text-gray-700 border border-gray-200">
+                              อ่านฟรี
+                            </span>
+                          )}
                         </td>
                         <td className="p-4">
-                          <div className="flex items-center justify-end gap-1">
+                          <div className="flex items-center justify-end gap-1.5">
                             {/* Edit Button */}
                             <button
                               onClick={() => {
@@ -2342,12 +3453,12 @@ export default function EditMangaPage() {
                               }}
                               disabled={loadingChapterData}
                               className={cn(
-                                "inline-flex items-center gap-1.5 px-3 py-1.5 border border-purple-500/30 rounded-lg text-purple-600 hover:bg-purple-500/10 transition-colors text-sm",
-                                loadingChapterData && "opacity-50 cursor-not-allowed"
+                                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-400/60 bg-orange-500/10 text-orange-100 hover:bg-orange-500/20 hover:border-orange-300 transition-colors text-xs sm:text-sm",
+                                loadingChapterData && "opacity-50 cursor-not-allowed",
                               )}>
                               {loadingChapterData ? (
                                 <>
-                                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-purple-600"></div>
+                                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-orange-500"></div>
                                   <span>กำลังโหลด...</span>
                                 </>
                               ) : (
@@ -2361,39 +3472,11 @@ export default function EditMangaPage() {
                             {/* Separator */}
                             <div className="w-px h-6 bg-border mx-1" />
                             
-                            {/* Download ZIP Button */}
+                            {/* Delete single chapter */}
                             <button
-                              onClick={async () => {
-                                try {
-                                  const sessionToken = localStorage.getItem("session_token") || "";
-                                  const response = await fetch(`/api/chapters/${chapter.id}/download-zip`, {
-                                    method: "GET",
-                                    headers: {
-                                      "x-session-token": sessionToken,
-                                    },
-                                  });
-                                  
-                                  if (response.ok) {
-                                    const blob = await response.blob();
-                                    const url = window.URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url;
-                                    a.download = `${manga.title}-ตอนที่-${chapter.number}.zip`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    window.URL.revokeObjectURL(url);
-                                    document.body.removeChild(a);
-                                    toast.success("ดาวน์โหลดสำเร็จ 👌");
-                                  } else {
-                                    toast.error("เกิดข้อผิดพลาดในการดาวน์โหลด");
-                                  }
-                                } catch (error) {
-                                  console.error("Failed to download chapter:", error);
-                                  toast.error("เกิดข้อผิดพลาดในการดาวน์โหลด");
-                                }
-                              }}
-                              className="p-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors">
-                              <Download className="w-4 h-4" />
+                              onClick={() => openSingleDeleteDialog(chapter.id)}
+                              className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-red-500/90 hover:bg-red-500 text-white text-xs sm:text-sm shadow-sm transition-colors">
+                              <Trash2 className="w-4 h-4" />
                             </button>
                             
                             {/* External Link Button */}
@@ -2401,7 +3484,7 @@ export default function EditMangaPage() {
                               onClick={() => {
                                 window.open(`/comic/chapter/${chapter.slug}`, "_blank");
                               }}
-                              className="p-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors">
+                              className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-orange-500 hover:bg-orange-600 text-white text-xs sm:text-sm shadow-sm transition-colors">
                               <ExternalLink className="w-4 h-4" />
                             </button>
                           </div>
@@ -2413,22 +3496,77 @@ export default function EditMangaPage() {
               </table>
             </div>
 
-            {manga.chapters.length > 0 && (
-              <div className="p-4 border-t border-border flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  จำนวนตอนทั้งหมด {manga.chapters.length} ตอน
+            {manga.chapters.length > 0 && (() => {
+              const totalPages = Math.max(
+                1,
+                Math.ceil(manga.chapters.length / chapterPageSize),
+              );
+              const pageItems = getPageItems(totalPages, chapterPage);
+
+              return (
+                <div className="p-4 border-t border-border flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    จำนวนตอนทั้งหมด {manga.chapters.length} ตอน
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setChapterPage((p) => Math.max(1, p - 1))}
+                      disabled={chapterPage === 1}
+                      className={cn(
+                        "px-3 py-1.5 border border-border rounded-lg text-sm",
+                        chapterPage === 1
+                          ? "text-muted-foreground cursor-not-allowed opacity-50"
+                          : "hover:bg-muted text-foreground",
+                      )}
+                    >
+                      ก่อนหน้า
+                    </button>
+
+                    {pageItems.map((item, idx) =>
+                      item === "dots" ? (
+                        <span
+                          key={`dots-${idx}`}
+                          className="px-2 py-1 text-sm text-muted-foreground"
+                        >
+                          ...
+                        </span>
+                      ) : (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => setChapterPage(item)}
+                          className={cn(
+                            "min-w-[2rem] px-2.5 py-1.5 rounded-lg text-sm border border-border",
+                            chapterPage === item
+                              ? "bg-orange-500 text-white border-orange-500"
+                              : "bg-background text-foreground hover:bg-muted",
+                          )}
+                        >
+                          {item}
+                        </button>
+                      ),
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setChapterPage((p) => Math.min(totalPages, p + 1))
+                      }
+                      disabled={chapterPage >= totalPages}
+                      className={cn(
+                        "px-3 py-1.5 border border-border rounded-lg text-sm",
+                        chapterPage >= totalPages
+                          ? "text-muted-foreground cursor-not-allowed opacity-50"
+                          : "hover:bg-muted text-foreground",
+                      )}
+                    >
+                      ต่อไป
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button className="px-3 py-1.5 border border-border rounded-lg hover:bg-muted text-sm">
-                    ก่อนหน้า
-                  </button>
-                  <button className="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-sm">1</button>
-                  <button className="px-3 py-1.5 border border-border rounded-lg hover:bg-muted text-sm">
-                    ต่อไป
-                  </button>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}
@@ -2442,7 +3580,7 @@ export default function EditMangaPage() {
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
                 activeStatsTab === "sales"
-                  ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+                  ? "bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
                   : "text-muted-foreground hover:text-foreground"
               )}>
               <BarChart3 className="w-4 h-4" />
@@ -2453,7 +3591,7 @@ export default function EditMangaPage() {
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
                 activeStatsTab === "analytics"
-                  ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+                  ? "bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
                   : "text-muted-foreground hover:text-foreground"
               )}>
               <TrendingUp className="w-4 h-4" />
@@ -2700,6 +3838,73 @@ export default function EditMangaPage() {
         </div>
       )}
 
+      {/* Themed Delete Confirmation Dialog */}
+      {deleteDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="mt-1">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-foreground mb-1">
+                  {deleteDialog.mode === "single" ? (
+                    <>
+                      คุณต้องการลบตอน{" "}
+                      <span className="text-orange-500">
+                        {deleteDialog.chapterTitle ||
+                          `ตอนที่ ${deleteDialog.chapterNumber}`}
+                      </span>{" "}
+                      ใช่หรือไม่?
+                    </>
+                  ) : (
+                    <>
+                      คุณต้องการลบตอนที่เลือกทั้งหมด{" "}
+                      <span className="text-orange-500">
+                        {deleteDialog.count} ตอน
+                      </span>{" "}
+                      ใช่หรือไม่?
+                    </>
+                  )}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  การลบนี้จะไม่สามารถย้อนกลับได้
+                </p>
+              </div>
+            </div>
+
+            <div className="border border-red-300/70 bg-red-500/5 rounded-xl px-4 py-3 flex items-start gap-3 mb-5">
+              <div className="mt-0.5">
+                <AlertTriangle className="w-4 h-4 text-red-500" />
+              </div>
+              <div className="text-xs">
+                <p className="font-semibold text-red-500 mb-0.5">คำเตือน</p>
+                <p className="text-muted-foreground">
+                  ข้อมูลตอนและรูปภาพทั้งหมดที่เกี่ยวข้องจะถูกลบออกจากระบบถาวร
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteDialog(null)}
+                className="px-4 py-2 rounded-full bg-red-500/90 hover:bg-red-600 text-white text-sm font-medium transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDialog}
+                className="px-5 py-2 rounded-full bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold shadow-sm transition-colors"
+              >
+                ยืนยัน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Chapter Modal */}
       {showAddChapterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -2730,7 +3935,11 @@ export default function EditMangaPage() {
                     number: 1,
                     price: 0,
                     status: "published",
+                    scheduleEnabled: false,
+                    scheduledAt: "",
                   });
+                  setPriceInputValue("0");
+                  setIsPaidMode(false);
                 }}
                 disabled={uploadingChapter || !!uploadingProgress || multiUploadProcessing}
                 className={cn(
@@ -2818,19 +4027,42 @@ export default function EditMangaPage() {
 
               {!loadingChapterData && chapterType === "single" ? (
                 <>
+                  {/* Information Bar - แสดงทั้งโหมดสร้างและแก้ไข */}
+                  {manga && (
+                    <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg px-4 py-2.5 flex items-center justify-between">
+                      <span className="text-sm text-foreground">
+                        ตอนก่อนหน้า : {(() => {
+                          const prevChapter = manga.chapters.find(c => c.number === chapterFormData.number - 1);
+                          return prevChapter ? `ตอนที่ ${prevChapter.number}` : manga.chapters.length > 0 ? `ตอนที่ ${Math.max(...manga.chapters.map(c => c.number))}` : "ไม่มี";
+                        })()}
+                      </span>
+                      <span className="text-sm text-foreground">
+                        จำนวนตอนทั้งหมด : {manga.chapters.length} ตอน
+                      </span>
+                    </div>
+                  )}
+
                   {/* Form Fields for Single Chapter */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">
-                        ชื่อตอน
-                      </label>
+                    <div className="md:col-span-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-foreground">
+                          ชื่อตอน
+                        </label>
+                        <span className="text-xs text-muted-foreground">
+                          {chapterFormData.title.length}/120
+                        </span>
+                      </div>
                       <input
                         type="text"
                         value={chapterFormData.title}
-                        onChange={(e) =>
-                          setChapterFormData({ ...chapterFormData, title: e.target.value })
-                        }
-                        placeholder="ใส่ชื่อตอน (ว่างได้)"
+                        onChange={(e) => {
+                          if (e.target.value.length <= 120) {
+                            setChapterFormData({ ...chapterFormData, title: e.target.value });
+                          }
+                        }}
+                        placeholder={editingChapterId ? "ใส่ชื่อตอน (ว่างได้)" : "ชื่อตอน (ว่างได้ ระบบจะใช้ 'ตอนที่ X' อัตโนมัติ)"}
+                        maxLength={120}
                         disabled={uploadingChapter || !!uploadingProgress}
                         className={cn(
                           "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
@@ -2838,69 +4070,391 @@ export default function EditMangaPage() {
                         )}
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">
-                        ตอนที่
-                      </label>
-                      <input
-                        type="number"
-                        value={chapterFormData.number}
-                        onChange={(e) =>
-                          setChapterFormData({
-                            ...chapterFormData,
-                            number: Number(e.target.value),
-                          })
-                        }
-                        min="1"
-                        step="0.5"
-                        disabled={uploadingChapter || !!uploadingProgress}
-                        className={cn(
-                          "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
-                          (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed"
-                        )}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">
-                        ราคา (0 = ฟรี)
-                      </label>
-                      <input
-                        type="number"
-                        value={chapterFormData.price}
-                        onChange={(e) =>
-                          setChapterFormData({
-                            ...chapterFormData,
-                            price: Number(e.target.value),
-                          })
-                        }
-                        min="0"
-                        disabled={uploadingChapter || !!uploadingProgress}
-                        className={cn(
-                          "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
-                          (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed"
-                        )}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">
-                        สถานะ
-                      </label>
-                      <select
-                        value={chapterFormData.status}
-                        onChange={(e) =>
-                          setChapterFormData({
-                            ...chapterFormData,
-                            status: e.target.value as "published" | "draft",
-                          })
-                        }
-                        disabled={uploadingChapter || !!uploadingProgress}
-                        className={cn(
-                          "w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
-                          (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed"
-                        )}>
-                        <option value="published">เผยแพร่</option>
-                        <option value="draft">แบบร่าง</option>
-                      </select>
+                    {/* ตั้งค่าตอน – ราคา + การแสดงผล อยู่ข้างกัน */}
+                    <div className="md:col-span-2 rounded-2xl border border-border/80 bg-card/60 shadow-sm overflow-hidden">
+                      <div className="px-5 pt-3.5 pb-2 border-b border-border/70">
+                        <span className="text-sm font-semibold text-foreground tracking-tight">
+                          ตั้งค่าตอน
+                        </span>
+                      </div>
+                      <div className="flex flex-col md:flex-row md:items-stretch divide-y md:divide-y-0 md:divide-x divide-border/70">
+                        {/* ซ้าย: ราคา */}
+                        <div className="flex-1 px-4 py-4 md:py-5 space-y-3 flex flex-col justify-center">
+                          {/* อ่านฟรี */}
+                          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              className="sr-only peer"
+                              checked={!isPaidMode}
+                              onChange={() => {
+                                setIsPaidMode(false);
+                                setChapterFormData({ ...chapterFormData, price: 0 });
+                                setPriceInputValue("0");
+                              }}
+                              disabled={uploadingChapter || !!uploadingProgress}
+                            />
+                            <span
+                              className={cn(
+                                "w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors",
+                                !isPaidMode
+                                  ? "border-orange-500 bg-white"
+                                  : "border-muted-foreground/40 bg-background",
+                              )}
+                            >
+                              {!isPaidMode && (
+                                <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                              )}
+                            </span>
+                            <span
+                              className={cn(
+                                "text-sm",
+                                !isPaidMode ? "text-foreground font-medium" : "text-muted-foreground",
+                              )}
+                            >
+                              อ่านฟรี
+                            </span>
+                          </label>
+
+                          {/* กำหนดราคาเหรียญ */}
+                          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              className="sr-only peer"
+                              checked={isPaidMode}
+                              onChange={() => {
+                                setIsPaidMode(true);
+                                if (chapterFormData.price === 0) {
+                                  setChapterFormData({ ...chapterFormData, price: 1 });
+                                  setPriceInputValue("1");
+                                }
+                              }}
+                              disabled={uploadingChapter || !!uploadingProgress}
+                            />
+                            <span
+                              className={cn(
+                                "w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors",
+                                isPaidMode
+                                  ? "border-orange-500 bg-white"
+                                  : "border-muted-foreground/40 bg-background",
+                              )}
+                            >
+                              {isPaidMode && (
+                                <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                              )}
+                            </span>
+                            <span
+                              className={cn(
+                                "text-sm",
+                                isPaidMode ? "text-foreground font-medium" : "text-muted-foreground",
+                              )}
+                            >
+                              กำหนดราคาเหรียญ
+                            </span>
+                            {/* Hint icon - แสดง hint เฉพาะเมื่อ hover ที่ icon */}
+                            <span className="relative flex items-center group/icon">
+                              <span className="flex items-center justify-center w-4 h-4 rounded-full border border-orange-400/70 text-[10px] text-orange-100 bg-background/80 shadow-sm cursor-help">
+                                ?
+                              </span>
+                              {/* Hover hint */}
+                              <span
+                                className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-9 hidden whitespace-nowrap rounded-md bg-background/95 border border-orange-500/70 px-3 py-1 text-[11px] text-foreground shadow-xl group-hover/icon:inline-block z-30"
+                              >
+                                สามารถกำหนดเป็นเศษสตางค์ได้ เช่น 1.55 เป็นต้น
+                              </span>
+                            </span>
+                          </label>
+
+                          {/* ช่องกรอกราคา – แสดงเมื่อเลือก กำหนดราคา */}
+                          {isPaidMode && (
+                            <div className="flex items-center gap-2 pl-7">
+                              <span className="w-7 h-7 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                                <Coins className="w-3.5 h-3.5" />
+                              </span>
+                              <input
+                                ref={priceInputRef}
+                                type="text"
+                                inputMode="decimal"
+                                value={priceInputValue}
+                                onChange={(e) => {
+                                  let value = e.target.value;
+                                  // อนุญาตให้พิมพ์ตัวเลขและจุดทศนิยมได้ (รองรับทั้ง . และ ,)
+                                  if (value === "" || value === "." || value === ",") {
+                                    setPriceInputValue(value);
+                                    setChapterFormData((prev) => ({ ...prev, price: 0 }));
+                                    return;
+                                  }
+                                  // แปลง , เป็น . เพื่อให้ parseFloat ทำงานได้
+                                  value = value.replace(",", ".");
+                                  // ตรวจสอบว่าเป็นตัวเลขหรือทศนิยมที่ถูกต้อง (ไม่เกิน 2 ตำแหน่ง)
+                                  const numMatch = value.match(/^\d*\.?\d{0,2}$/);
+                                  if (numMatch) {
+                                    setPriceInputValue(value);
+                                    const numValue = parseFloat(value);
+                                    if (!isNaN(numValue) && numValue >= 0) {
+                                      const rounded = Math.round(numValue * 100) / 100;
+                                      setChapterFormData((prev) => ({ ...prev, price: rounded }));
+                                    }
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  let valueStr = e.target.value.replace(",", ".");
+                                  const value = parseFloat(valueStr);
+                                  // เมื่อ blur ให้ปัดเศษเป็น 2 ตำแหน่งและ format
+                                  if (!isNaN(value) && value >= 0) {
+                                    const rounded = Math.round(value * 100) / 100;
+                                    setPriceInputValue(rounded.toString());
+                                    setChapterFormData((prev) => ({ ...prev, price: rounded }));
+                                  } else {
+                                    setPriceInputValue("0");
+                                    setChapterFormData((prev) => ({ ...prev, price: 0 }));
+                                  }
+                                }}
+                                disabled={uploadingChapter || !!uploadingProgress}
+                                className={cn(
+                                  "w-28 px-3 py-1.5 border border-border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20",
+                                  (uploadingChapter || uploadingProgress) && "opacity-50 cursor-not-allowed",
+                                )}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ขวา: การแสดงผลตอน */}
+                        <div className="flex-1 px-4 py-4 md:py-5 space-y-3 flex flex-col justify-center">
+                          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                            {/* ซ่อน */}
+                            <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                className="sr-only peer"
+                                checked={getDisplayMode() === "hidden"}
+                                onChange={() => handleDisplayModeChange("hidden")}
+                                disabled={uploadingChapter || !!uploadingProgress}
+                              />
+                              <span
+                                className={cn(
+                                  "w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors",
+                                  getDisplayMode() === "hidden"
+                                    ? "border-orange-500 bg-white"
+                                    : "border-muted-foreground/40 bg-background",
+                                )}
+                              >
+                                {getDisplayMode() === "hidden" && (
+                                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                                )}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-sm",
+                                  getDisplayMode() === "hidden" ? "text-foreground font-medium" : "text-muted-foreground",
+                                )}
+                              >
+                                ซ่อน
+                              </span>
+                            </label>
+
+                            {/* เผยแพร่ทันที */}
+                            <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                className="sr-only peer"
+                                checked={getDisplayMode() === "now"}
+                                onChange={() => handleDisplayModeChange("now")}
+                                disabled={uploadingChapter || !!uploadingProgress}
+                              />
+                              <span
+                                className={cn(
+                                  "w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors",
+                                  getDisplayMode() === "now"
+                                    ? "border-orange-500 bg-white"
+                                    : "border-muted-foreground/40 bg-background",
+                                )}
+                              >
+                                {getDisplayMode() === "now" && (
+                                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                                )}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-sm",
+                                  getDisplayMode() === "now" ? "text-foreground font-medium" : "text-muted-foreground",
+                                )}
+                              >
+                                เผยแพร่ทันที
+                              </span>
+                            </label>
+
+                            {/* ตั้งเวลาเผยแพร่ */}
+                            <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                className="sr-only peer"
+                                checked={getDisplayMode() === "schedule"}
+                                onChange={() => handleDisplayModeChange("schedule")}
+                                disabled={uploadingChapter || !!uploadingProgress}
+                              />
+                              <span
+                                className={cn(
+                                  "w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors",
+                                  getDisplayMode() === "schedule"
+                                    ? "border-orange-500 bg-white"
+                                    : "border-muted-foreground/40 bg-background",
+                                )}
+                              >
+                                {getDisplayMode() === "schedule" && (
+                                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                                )}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-sm",
+                                  getDisplayMode() === "schedule" ? "text-foreground font-medium" : "text-muted-foreground",
+                                )}
+                              >
+                                ตั้งเวลาเผยแพร่
+                              </span>
+                            </label>
+                          </div>
+
+                          {getDisplayMode() === "schedule" && (
+                            <div className="space-y-3 pt-2">
+                              {/* ปฏิทินไทย */}
+                              <div className="border border-border rounded-xl overflow-hidden bg-card shadow-sm">
+                                {/* หัวเดือน + ปุ่มเลื่อน */}
+                                <div className="flex items-center justify-between px-4 py-2.5">
+                                  <span className="font-semibold text-sm text-foreground">
+                                    {THAI_MONTHS_FULL[scheduleCalMonth]} {scheduleCalYear}
+                                  </span>
+                                  <div className="flex items-center gap-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => navigateScheduleCalendar(-1)}
+                                      className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                    >
+                                      <ChevronLeft className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => navigateScheduleCalendar(1)}
+                                      className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                    >
+                                      <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* วันในสัปดาห์ */}
+                                <div className="grid grid-cols-7 px-3 pb-1">
+                                  {THAI_DAYS_SHORT.map((d) => (
+                                    <div
+                                      key={d}
+                                      className="text-center text-[11px] font-medium text-muted-foreground py-1"
+                                    >
+                                      {d}
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* ตารางวันที่ */}
+                                <div className="grid grid-cols-7 px-3 pb-3 gap-y-0.5">
+                                  {getCalendarDays(scheduleCalYear, scheduleCalMonth).map(
+                                    (day, i) => {
+                                      if (day === null) return <div key={`e-${i}`} />;
+
+                                      const isPast = isCalendarDateInPast(
+                                        scheduleCalYear,
+                                        scheduleCalMonth,
+                                        day,
+                                      );
+                                      const selectedDateStr =
+                                        chapterFormData.scheduledAt?.slice(0, 10) || "";
+                                      const thisDateStr = `${scheduleCalYear}-${String(scheduleCalMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                                      const isSelected = selectedDateStr === thisDateStr;
+                                      const todayStr = new Date()
+                                        .toISOString()
+                                        .slice(0, 10);
+                                      const isToday = thisDateStr === todayStr;
+
+                                      return (
+                                        <button
+                                          key={`d-${day}`}
+                                          type="button"
+                                          disabled={
+                                            isPast ||
+                                            uploadingChapter ||
+                                            !!uploadingProgress
+                                          }
+                                          onClick={() =>
+                                            handleCalendarDateSelect(day)
+                                          }
+                                          className={cn(
+                                            "w-8 h-8 mx-auto rounded-full text-sm flex items-center justify-center transition-all",
+                                            isPast &&
+                                              "text-muted-foreground/30 cursor-not-allowed",
+                                            !isPast &&
+                                              !isSelected &&
+                                              "text-foreground cursor-pointer",
+                                            isSelected &&
+                                              "bg-orange-500 text-white font-semibold shadow-sm",
+                                          )}
+                                        >
+                                          {day}
+                                        </button>
+                                      );
+                                    },
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* แสดงวันที่และเวลาที่เลือก */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="flex items-center gap-2.5 px-3 py-2.5 border border-border rounded-lg bg-background">
+                                  <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
+                                  <span className="text-sm text-foreground">
+                                    {formatThaiCalendarDate(chapterFormData.scheduledAt)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2.5 border border-border rounded-lg bg-background overflow-hidden">
+                                  <div className="flex items-center gap-2.5 px-3 w-full">
+                                    <Clock className="w-4 h-4 text-orange-500 shrink-0" />
+                                    <input
+                                      type="time"
+                                      value={
+                                        chapterFormData.scheduledAt?.includes("T")
+                                          ? chapterFormData.scheduledAt
+                                              .split("T")[1]
+                                              .slice(0, 5)
+                                          : ""
+                                      }
+                                      onChange={(e) =>
+                                        handleScheduledTimeChange(e.target.value)
+                                      }
+                                      disabled={
+                                        uploadingChapter || !!uploadingProgress
+                                      }
+                                      className={cn(
+                                        "w-full py-2.5 bg-transparent text-sm text-foreground focus:outline-none",
+                                        (uploadingChapter || uploadingProgress) &&
+                                          "opacity-50 cursor-not-allowed",
+                                      )}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* คำเตือนเวลาในอดีต */}
+                              {isScheduledInPast && (
+                                <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                                  <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                                  <p className="text-xs text-red-500 font-medium">
+                                    กรุณาเลือกวันเวลาที่จะเผยแพร่ให้มากกว่าวันเวลาปัจจุบัน
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -2920,10 +4474,10 @@ export default function EditMangaPage() {
                           }}
                           disabled={uploadingChapter || !!uploadingProgress}
                           className={cn(
-                            "px-3 py-1.5 border border-red-500 rounded-lg text-sm font-medium transition-colors",
+                            "px-3 py-1.5 border border-red-500/50 rounded-lg text-sm font-medium transition-colors",
                             (uploadingChapter || uploadingProgress)
                               ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50"
-                              : "bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:border-red-600"
+                              : "bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:border-red-500"
                           )}>
                           ลบทั้งหมด
                         </button>
@@ -3385,14 +4939,18 @@ export default function EditMangaPage() {
                       number: 1,
                       price: 0,
                       status: "published",
+                      scheduleEnabled: false,
+                      scheduledAt: "",
                     });
+                    setPriceInputValue("0");
+                    setIsPaidMode(false);
                   }}
                   disabled={multiUploadProcessing || uploadingChapter}
                   className={cn(
                     "px-6 py-2.5 rounded-lg transition-colors",
                     multiUploadProcessing || uploadingChapter
                       ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50"
-                      : "bg-green-500 text-white hover:bg-green-600"
+                      : "bg-orange-500 text-white hover:bg-orange-600"
                   )}
                 >
                   {multiUploadProcessing || uploadingChapter ? "กำลังอัพโหลด..." : "เสร็จสิ้น"}
@@ -3419,14 +4977,29 @@ export default function EditMangaPage() {
                         number: 1,
                         price: 0,
                         status: "published",
+                        scheduleEnabled: false,
+                        scheduledAt: "",
                       });
+                      setPriceInputValue("0");
+                      setIsPaidMode(false);
+                      setCarouselIndex(0);
+                      setChapterFormData({
+                        title: "",
+                        number: 1,
+                        price: 0,
+                        status: "published",
+                        scheduleEnabled: false,
+                        scheduledAt: "",
+                      });
+                      setPriceInputValue("0");
+                      setIsPaidMode(false);
                     }}
                     disabled={uploadingChapter || !!uploadingProgress}
                     className={cn(
-                      "px-6 py-2.5 border border-border rounded-lg transition-colors",
+                      "px-6 py-2.5 border border-red-500/50 rounded-lg transition-colors",
                       uploadingChapter || uploadingProgress
-                        ? "opacity-50 cursor-not-allowed"
-                        : "hover:bg-muted"
+                        ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground"
+                        : "bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:border-red-500"
                     )}>
                     ยกเลิก
                   </button>
@@ -3440,24 +5013,32 @@ export default function EditMangaPage() {
                     }
                     disabled={
                       uploadingChapter ||
+                      isScheduledInPast ||
                       (editingChapterId
                         ? imagePreviews.length === 0
                         : chapterType === "single"
                           ? chapterImages.length === 0
                           : !zipFile)
                     }
-                    className="px-6 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    className={cn(
+                      "px-6 py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                      isScheduledInPast
+                        ? "bg-red-500/20 text-red-500 border border-red-500/30"
+                        : "bg-orange-500 text-white hover:bg-orange-600",
+                    )}>
                     {uploadingChapter
                       ? editingChapterId
                         ? "กำลังอัปเดต..."
                         : chapterType === "single"
-                          ? "กำลังสร้าง..."
+                          ? "กำลังสร้างตอน..."
                           : "กำลังอัปโหลดหลายตอน..."
-                      : editingChapterId
-                        ? "อัปเดต"
-                        : chapterType === "single"
-                          ? "สร้าง"
-                          : "อัปโหลดหลายตอน"}
+                      : isScheduledInPast
+                        ? "ไม่สามารถบันทึกได้ — เวลาเผยแพร่ไม่ถูกต้อง"
+                        : editingChapterId
+                          ? "อัปเดตตอน"
+                          : chapterType === "single"
+                            ? "สร้างตอน"
+                            : "อัปโหลดหลายตอน"}
                   </button>
                 </>
               )}

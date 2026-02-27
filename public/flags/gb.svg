@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480">
+  <!-- Base blue -->
+  <rect width="640" height="480" fill="#012169" />
+  <!-- White diagonals -->
+  <polygon points="0,0 80,0 640,320 640,480 560,480 0,160" fill="#ffffff" />
+  <polygon points="640,0 560,0 0,320 0,480 80,480 640,160" fill="#ffffff" />
+  <!-- Red diagonals -->
+  <polygon points="0,0 40,0 640,300 640,340" fill="#c8102e" />
+  <polygon points="640,0 600,0 0,300 0,340" fill="#c8102e" />
+  <!-- White cross -->
+  <rect x="260" width="120" height="480" fill="#ffffff" />
+  <rect y="180" width="640" height="120" fill="#ffffff" />
+  <!-- Red cross -->
+  <rect x="280" width="80" height="480" fill="#c8102e" />
+  <rect y="200" width="640" height="80" fill="#c8102e" />
+</svg>
+

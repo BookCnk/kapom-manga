@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 
 interface SearchBarProps {
@@ -22,6 +22,7 @@ export default function SearchBar({
   delayMs = 500,
 }: SearchBarProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
 
   useEffect(() => {
@@ -30,11 +31,16 @@ export default function SearchBar({
 
   const goSearch = (value: string) => {
     const trimmed = value.trim();
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    
     if (!trimmed) {
-      router.push("/search");
-      return;
+      params.delete("q");
+    } else {
+      params.set("q", trimmed);
     }
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    
+    const queryString = params.toString();
+    router.push(queryString ? `/search?${queryString}` : "/search");
   };
 
   const handleSubmit = (e: FormEvent) => {

@@ -11,6 +11,7 @@ import {
   ensureTranslatorOrAdmin,
 } from "@/lib/api/permissions";
 import { getGenreBySlug } from "@/lib/config/genres";
+import { contentTypeValues } from "@/lib/config/contentTypes";
 
 function getS3Client() {
   const endpoint = process.env.S3_ENDPOINT;
@@ -62,16 +63,23 @@ type Params = {
   };
 };
 
+const contentTypeEnum = z.enum(
+  contentTypeValues as [string, ...string[]],
+);
+
 const updateMangaSchema = z.object({
   slug: z.string().trim().min(2).max(120).optional(),
-  title: z.string().trim().min(1).max(200).optional(),
-  originalTitle: z.string().trim().max(200).nullable().optional(),
+  // จำกัดชื่อเรื่องสูงสุด 120 ตัวอักษร
+  title: z.string().trim().min(1).max(120).optional(),
+  // จำกัดชื่อเรื่องต้นฉบับสูงสุด 120 ตัวอักษร
+  originalTitle: z.string().trim().max(120).nullable().optional(),
   description: z.string().trim().max(5000).nullable().optional(),
   coverUrl: z.string().url().nullable().optional(),
   bannerUrl: z.string().url().nullable().optional(),
   status: z.nativeEnum(MangaStatus).optional(),
   visibility: z.nativeEnum(Visibility).optional(),
   isMature: z.boolean().optional(),
+  contentType: contentTypeEnum.optional(),
   genreSlugs: z.array(z.string().trim().min(1)).optional(),
   tags: z.array(z.string().trim().min(1).max(20)).optional().default([]),
 });
@@ -145,23 +153,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     // Update manga with genres and tags in a transaction
     const manga = await prisma.$transaction(async (tx) => {
-      // Update manga basic info
-      const updatedManga = await tx.manga.update({
-        where: { id: mangaId },
-        data: mangaData,
-      });
-
-      // Update tags if provided
+      // Update tags if provided - convert to slugs and store in tagSlugs array
       if (tags !== undefined) {
-        // Delete existing tag relations
-        await (tx as any).mangaTag.deleteMany({
-          where: { mangaId },
-        });
-
-        // Create or get tags and create relations
-        if (Array.isArray(tags) && tags.length > 0) {
-          try {
-            const tagPromises = tags.map(async (tagName: string) => {
+        const tagSlugs = Array.isArray(tags) && tags.length > 0
+          ? tags.map((tagName: string) => {
               const tagSlug = tagName
                 .toLowerCase()
                 .trim()
@@ -170,39 +165,18 @@ export async function PATCH(request: NextRequest, { params }: Params) {
                 .replace(/-+/g, "-")
                 .replace(/^-|-$/g, "");
 
-              const finalSlug = tagSlug || encodeURIComponent(tagName.trim()).toLowerCase();
+              return tagSlug || encodeURIComponent(tagName.trim()).toLowerCase();
+            }).filter((slug) => slug.length > 0)
+          : [];
 
-              const tag = await (tx as any).tag.upsert({
-                where: { slug: finalSlug },
-                update: {},
-                create: {
-                  name: tagName,
-                  slug: finalSlug,
-                },
-              });
-
-              return tag.id;
-            });
-
-            const tagIds = (await Promise.all(tagPromises)).filter(
-              (id) => id !== null,
-            );
-
-            if (tagIds.length > 0) {
-              await (tx as any).mangaTag.createMany({
-                data: tagIds.map((tagId) => ({
-                  mangaId,
-                  tagId,
-                })),
-                skipDuplicates: true,
-              });
-            }
-          } catch (tagError) {
-            console.error("Error updating tags for manga:", tagError);
-            // Continue without tags if tag update fails
-          }
-        }
+        (mangaData as any).tagSlugs = tagSlugs;
       }
+
+      // Update manga basic info
+      const updatedManga = await tx.manga.update({
+        where: { id: mangaId },
+        data: mangaData,
+      });
 
       return updatedManga;
     });

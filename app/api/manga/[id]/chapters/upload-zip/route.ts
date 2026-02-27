@@ -81,7 +81,7 @@ type Params = {
 const uploadZipSchema = z.object({
   zipFile: z.string(), // base64 encoded ZIP file
   zipFileName: z.string(),
-  defaultPrice: z.number().int().min(0).default(0),
+  defaultPrice: z.number().min(0).default(0).transform((v) => Math.round(v * 100) / 100),
   defaultStatus: z.enum(["published", "draft"]).default("published"),
 });
 

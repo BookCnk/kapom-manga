@@ -73,37 +73,11 @@ function generateSlug(name: string): string {
 async function main() {
   console.log("🌱 Starting genre seed...");
 
-  // Create main genres
-  console.log("📚 Creating main genres...");
-  for (const name of mainGenres) {
-    const slug = generateSlug(name);
-    await prisma.tag.upsert({
-      where: { slug },
-      update: { name },
-      create: {
-        slug,
-        name,
-      },
-    });
-    console.log(`  ✅ ${name}`);
-  }
-
-  // Create sub genres
-  console.log("\n📖 Creating sub genres...");
-  for (const name of subGenres) {
-    const slug = `sub-${generateSlug(name)}`;
-    await prisma.tag.upsert({
-      where: { slug },
-      update: { name },
-      create: {
-        slug,
-        name,
-      },
-    });
-    console.log(`  ✅ ${name}`);
-  }
-
-  console.log("\n✅ Genre seed completed!");
+  // เดิมสคริปต์นี้ใช้ตาราง Tag (prisma.tag) ในฐานข้อมูล
+  // แต่ตอนนี้ genre ถูกกำหนดจากไฟล์ config (`lib/config/genres.ts`)
+  // และเราไม่ใช้ตาราง Tag อีกแล้ว จึงไม่ต้อง seed อะไรใน DB
+  console.log("📚 Skipping Tag seeding; genres nowมาจาก lib/config/genres.ts");
+  console.log("\n✅ Genre seed completed (no-op).");
 }
 
 main()

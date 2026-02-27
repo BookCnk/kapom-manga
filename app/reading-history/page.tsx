@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
-import { History, BookOpen, Clock, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { History, BookOpen } from "lucide-react";
+import { format } from "date-fns";
+import { th } from "date-fns/locale";
 
 type ReadingHistoryItem = {
   id: number;
@@ -30,8 +32,6 @@ export default function ReadingHistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const [history, setHistory] = useState<ReadingHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -39,7 +39,7 @@ export default function ReadingHistoryPage() {
     } else if (!authLoading && !user) {
       setLoading(false);
     }
-  }, [authLoading, user, page]);
+  }, [authLoading, user]);
 
   const fetchHistory = async () => {
     try {
@@ -48,7 +48,7 @@ export default function ReadingHistoryPage() {
       if (!token) return;
 
       const response = await fetch(
-        `/api/reading-history?page=${page}&limit=20`,
+        `/api/reading-history?limit=50`,
         {
           headers: {
             "x-session-token": token,
@@ -60,7 +60,6 @@ export default function ReadingHistoryPage() {
         const data = await response.json();
         if (data.success) {
           setHistory(data.data.history);
-          setTotalPages(data.data.pagination.totalPages);
         }
       }
     } catch (error) {
@@ -70,30 +69,13 @@ export default function ReadingHistoryPage() {
     }
   };
 
-  const formatTimeAgo = (dateString: string): string => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (diffInSeconds < 60) return "เมื่อสักครู่";
-    if (diffInSeconds < 3600) {
-      const minutes = Math.floor(diffInSeconds / 60);
-      return `${minutes} นาทีที่แล้ว`;
+  const formatThaiDateTime = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      return format(date, "d MMM yyyy HH:mm น.", { locale: th });
+    } catch (error) {
+      return dateString;
     }
-    if (diffInSeconds < 86400) {
-      const hours = Math.floor(diffInSeconds / 3600);
-      return `${hours} ชั่วโมงที่แล้ว`;
-    }
-    if (diffInSeconds < 604800) {
-      const days = Math.floor(diffInSeconds / 86400);
-      return `${days} วันที่แล้ว`;
-    }
-    if (diffInSeconds < 2592000) {
-      const weeks = Math.floor(diffInSeconds / 604800);
-      return `${weeks} สัปดาห์ที่แล้ว`;
-    }
-    const months = Math.floor(diffInSeconds / 2592000);
-    return `${months} เดือนที่แล้ว`;
   };
 
   if (authLoading || loading) {
@@ -123,12 +105,11 @@ export default function ReadingHistoryPage() {
     <div className="flex-1 bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-            <History className="w-6 h-6" />
+          <h1 className="text-2xl font-semibold text-foreground">
             ประวัติการอ่าน
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            ดูประวัติการอ่านการ์ตูนของคุณ
+            แสดงเฉพาะ 50 รายการเรื่องที่อ่านล่าสุด
           </p>
         </div>
 
@@ -143,18 +124,21 @@ export default function ReadingHistoryPage() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-4">
-            {history.map((item) => (
+          <div className="space-y-0">
+            {history.map((item, index) => (
               <Link
                 key={item.id}
-                href={`/read/${item.manga.id}/${item.chapter.id}`}
-                className="block bg-card rounded-xl border border-border p-4 hover:border-orange-500/50 transition-colors">
-                <div className="flex items-start gap-4">
-                  <div className="w-20 h-28 rounded overflow-hidden bg-muted flex-shrink-0">
+                href={`/comic/chapter/${item.chapter.slug}`}
+                className="block border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
+                <div className="flex items-center gap-4 p-4">
+                  {/* Cover Image */}
+                  <div className="w-16 h-20 sm:w-20 sm:h-28 rounded overflow-hidden bg-muted flex-shrink-0">
                     {item.manga.coverUrl ? (
-                      <img
+                      <Image
                         src={item.manga.coverUrl}
                         alt={item.manga.title}
+                        width={80}
+                        height={112}
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -164,48 +148,25 @@ export default function ReadingHistoryPage() {
                     )}
                   </div>
 
+                  {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-foreground truncate hover:text-orange-500 transition-colors">
+                    <p className="text-sm font-medium text-foreground line-clamp-2">
                       {item.manga.title}
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      ตอนที่ {item.chapter.number}: {item.chapter.title}
                     </p>
-                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{formatTimeAgo(item.updatedAt)}</span>
-                      </div>
-                      <span>•</span>
-                      <span>หน้า {item.lastPage}</span>
-                    </div>
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                      {item.chapter.title || `ตอนที่ ${item.chapter.number}`}
+                    </p>
                   </div>
 
-                  <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                  {/* Timestamp */}
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm text-muted-foreground whitespace-nowrap">
+                      {formatThaiDateTime(item.updatedAt)}
+                    </p>
+                  </div>
                 </div>
               </Link>
             ))}
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 pt-4">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                  ก่อนหน้า
-                </button>
-                <span className="text-sm text-muted-foreground">
-                  หน้า {page} จาก {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                  ต่อไป
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>

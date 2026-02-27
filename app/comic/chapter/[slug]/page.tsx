@@ -3,10 +3,13 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Home, Reply } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import RecommendedManga from "@/components/comic/RecommendedManga";
 
 type Page = {
   id: number;
@@ -14,36 +17,23 @@ type Page = {
   imageUrl: string;
 };
 
-type Comment = {
-  id: number;
-  content: string;
-  createdAt: string;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-    avatarUrl: string | null;
-  };
-  replies: Comment[];
-  _count: {
-    replies: number;
-  };
-};
 
 type Chapter = {
   id: number;
   title: string;
   number: number;
   slug: string;
+  publishedAt: string | null;
   manga: {
     id: number;
     title: string;
     slug: string;
+    creator?: {
+      id: number;
+      username: string | null;
+    } | null;
   };
   pages: Page[];
-  _count: {
-    comments: number;
-  };
 };
 
 type ChapterNav = {
@@ -58,12 +48,20 @@ export default function ChapterReaderPage() {
   const slug = params.slug as string;
 
   const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [chapterStatus, setChapterStatus] = useState<"published" | "hidden" | "scheduled">(
+    "published",
+  );
+  const [isOwnerPreview, setIsOwnerPreview] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [loadingComments, setLoadingComments] = useState(false);
   const [showPages, setShowPages] = useState(false);
   const [nextChapter, setNextChapter] = useState<ChapterNav>(null);
   const [prevChapter, setPrevChapter] = useState<ChapterNav>(null);
+  const [isLocked, setIsLocked] = useState(false);
+  const [priceCoins, setPriceCoins] = useState(0);
+  const [isPurchased, setIsPurchased] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
 
   useEffect(() => {
     if (slug) {
@@ -75,21 +73,46 @@ export default function ChapterReaderPage() {
     try {
       setLoading(true);
       setShowPages(false); // Reset showPages when loading new chapter
-      const response = await fetch(`/api/chapters/slug/${slug}`);
+      const headers: HeadersInit = {};
+      let token: string | null = null;
+      if (typeof window !== "undefined") {
+        token = localStorage.getItem("session_token");
+        if (token) {
+          headers["x-session-token"] = token;
+        }
+      }
+
+      const response = await fetch(`/api/chapters/slug/${slug}`, { headers });
       const data = await response.json();
 
       if (data.success && data.data?.chapter) {
         setChapter(data.data.chapter);
+        if (data.data.status) {
+          setChapterStatus(data.data.status);
+        } else {
+          setChapterStatus("published");
+        }
+        setIsOwnerPreview(Boolean(data.data.isOwnerPreview));
         setNextChapter(data.data.nextChapter || null);
         setPrevChapter(data.data.prevChapter || null);
-        // Fetch comments after chapter is loaded
-        if (data.data.chapter.id) {
-          fetchComments(data.data.chapter.id);
+        setIsLocked(Boolean(data.data.isLocked));
+        setPriceCoins(data.data.priceCoins || 0);
+        setIsPurchased(Boolean(data.data.isPurchased));
+        setIsOwner(Boolean(data.data.isOwner));
+        
+        // Fetch wallet balance if chapter is locked
+        if (data.data.isLocked && !data.data.isOwner && !data.data.isPurchased && token) {
+          fetchWalletBalance();
+        } else {
+          // Record reading history
+          if (data.data.chapter.id && token) {
+            recordReadingHistory(data.data.chapter.id);
+          }
+          // Show pages after 2-3 seconds
+          setTimeout(() => {
+            setShowPages(true);
+          }, 2500);
         }
-        // Show pages after 2-3 seconds
-        setTimeout(() => {
-          setShowPages(true);
-        }, 2500);
       } else {
         // Handle error
         console.error("Chapter not found");
@@ -101,26 +124,99 @@ export default function ChapterReaderPage() {
     }
   };
 
-  const fetchComments = async (chapterId: number) => {
+  const fetchWalletBalance = async () => {
     try {
-      setLoadingComments(true);
-      const response = await fetch(`/api/chapters/${chapterId}/comments`);
-      const data = await response.json();
+      const token = localStorage.getItem("session_token");
+      if (!token) return;
 
-      if (data.success && data.data?.comments) {
-        setComments(data.data.comments);
+      const response = await fetch("/api/wallet/me", {
+        headers: {
+          "x-session-token": token,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data?.wallet) {
+          setWalletBalance(data.data.wallet.balance || 0);
+        }
       }
     } catch (error) {
-      console.error("Failed to fetch comments:", error);
-    } finally {
-      setLoadingComments(false);
+      console.error("Failed to fetch wallet balance:", error);
     }
   };
 
-  function formatThaiDate(dateString: string): string {
+  const handlePurchase = async () => {
+    if (!chapter || purchasing) return;
+
+    setPurchasing(true);
+    try {
+      const token = localStorage.getItem("session_token");
+      if (!token) {
+        toast.error("กรุณาเข้าสู่ระบบก่อน");
+        return;
+      }
+
+      const response = await fetch(`/api/chapters/${chapter.id}/purchase`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-session-token": token,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "เกิดข้อผิดพลาดในการซื้อตอน");
+      }
+
+      toast.success("ซื้อตอนสำเร็จ!");
+      setWalletBalance(data.data.transaction.balanceAfter);
+      setIsPurchased(true);
+      
+      // Record reading history and show pages
+      recordReadingHistory(chapter.id);
+      setTimeout(() => {
+        setShowPages(true);
+      }, 2500);
+    } catch (error) {
+      console.error("Purchase error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการซื้อตอน"
+      );
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const recordReadingHistory = async (chapterId: number) => {
+    try {
+      const token = localStorage.getItem("session_token");
+      if (!token) return;
+
+      await fetch("/api/reading-history/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-session-token": token,
+        },
+        body: JSON.stringify({
+          chapterId,
+          lastPage: 1, // Default to first page
+        }),
+      });
+    } catch (error) {
+      console.error("Failed to record reading history:", error);
+      // Don't show error to user, just log it
+    }
+  };
+
+
+  function formatThaiDateTime(dateString: string): string {
     try {
       const date = new Date(dateString);
-      return format(date, "d MMM yyyy", { locale: th });
+      return format(date, "d MMM yyyy HH:mm น.", { locale: th });
     } catch (error) {
       return dateString;
     }
@@ -152,8 +248,31 @@ export default function ChapterReaderPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* แถบแจ้งเตือนสำหรับเจ้าของผลงานเมื่อดูตอนที่ซ่อน / รอเผยแพร่ (สไตล์เดียวกับกรอบตอน) */}
+      {isOwnerPreview && chapterStatus !== "published" && (
+        <div className="w-full flex justify-center pt-4 pb-2">
+          <div className="w-full max-w-4xl mx-auto border-l-2 border-r-2 border-black dark:border-gray-800 bg-orange-50/95">
+            <div className="px-4 py-3 text-xs sm:text-sm text-orange-900 flex items-start gap-3">
+              <span className="mt-[2px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-[11px] font-bold text-white shadow-sm">
+                i
+              </span>
+              <p className="leading-relaxed">
+                {chapterStatus === "hidden"
+                  ? 'สถานะตอนนี้ "ซ่อนอยู่" ผู้ใช้งานท่านอื่นจะไม่สามารถเข้าชมเนื้อหานี้ได้'
+                  : chapter?.publishedAt
+                    ? `สถานะตอนนี้ "รอเผยแพร่" ตอนนี้จะเผยแพร่เมื่อถึงเวลา ${formatThaiDateTime(
+                        chapter.publishedAt,
+                      )}`
+                    : 'สถานะตอนนี้ "รอเผยแพร่" ตอนนี้จะเผยแพร่เมื่อถึงเวลาที่กำหนด'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header - Sticky และแยกจากกรอบตอน แต่ความกว้างขนานกัน */}
-      <div className="sticky top-0 z-50 bg-background/80 backdrop-blur-md">
+      {/* top-16 (64px) ให้ header ลอยอยู่ใต้ Navbar ที่สูง ~64px */}
+      <div className="sticky top-16 z-40 bg-background/80 backdrop-blur-md">
         <div className="w-full max-w-4xl mx-auto border-b border-border"></div>
         <div 
           className="w-full max-w-4xl mx-auto border-l-2 border-r-2 border-black dark:border-gray-800 bg-muted/20"
@@ -230,13 +349,102 @@ export default function ChapterReaderPage() {
                 {chapter.title || `ตอนที่ ${chapter.number}`}
               </h2>
               {chapter.title && chapter.title.includes("(") && (
-                <p className="text-muted-foreground mt-2">({chapter.title.match(/\(([^)]+)\)/)?.[1]})</p>
+                <p className="text-muted-foreground mt-2">
+                  ({chapter.title.match(/\(([^)]+)\)/)?.[1]})
+                </p>
+              )}
+
+              {/* ชื่อนักเขียน / username ใต้ชื่อตอน คลิกไปโปรไฟล์ในแท็บใหม่ */}
+              {chapter.manga.creator && (
+                <div className="mt-3">
+                  <Link
+                    href={`/profile/${chapter.manga.creator.username || chapter.manga.creator.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-orange-400 hover:text-orange-300 transition-colors"
+                  >
+                    <span className="font-medium">
+                      @{chapter.manga.creator.username || chapter.manga.creator.id}
+                    </span>
+                  </Link>
+                </div>
               )}
             </div>
           </div>
 
-          {/* All Pages - Show after delay */}
-          {showPages ? (
+          {/* Purchase Section - Show if locked and not purchased */}
+          {isLocked && !isOwner && !isPurchased ? (
+            <div 
+              className="w-full max-w-4xl mx-auto border-l-2 border-r-2 border-black dark:border-gray-800 bg-muted/20"
+              style={{
+                padding: '8px'
+              }}
+            >
+              <div className="px-4 py-8 text-center space-y-6">
+                {/* Wallet Balance */}
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground mb-2">ยอดเหรียญของคุณ</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">R</span>
+                    </div>
+                    <span className="text-2xl font-bold text-foreground">
+                      {walletBalance !== null
+                        ? walletBalance.toFixed(2).replace(/\.?0+$/, "")
+                        : "..."}
+                    </span>
+                    <button
+                      onClick={() => window.open("/wallet", "_blank")}
+                      className="w-6 h-6 rounded-full bg-orange-500/20 hover:bg-orange-500/30 flex items-center justify-center transition-colors border border-orange-500/30"
+                    >
+                      <Plus className="w-4 h-4 text-orange-500" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Purchase Button */}
+                <button
+                  onClick={handlePurchase}
+                  disabled={!walletBalance || walletBalance < Math.ceil(priceCoins) || purchasing}
+                  className={`w-full max-w-md mx-auto py-4 px-6 rounded-xl font-semibold text-white transition-colors flex items-center justify-center gap-2 ${
+                    walletBalance !== null && walletBalance >= Math.ceil(priceCoins) && !purchasing
+                      ? "bg-orange-500 hover:bg-orange-600"
+                      : "bg-muted text-muted-foreground cursor-not-allowed"
+                  }`}
+                >
+                  {purchasing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>กำลังซื้อ...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      <span>{priceCoins.toFixed(2).replace(/\.?0+$/, "")} เหรียญ</span>
+                    </>
+                  )}
+                </button>
+
+                {walletBalance !== null && walletBalance < Math.ceil(priceCoins) && (
+                  <p className="text-sm text-center text-orange-500">
+                    ยอดเหรียญไม่เพียงพอ
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : showPages ? (
             <div className="w-full max-w-4xl mx-auto">
               {chapter.pages.map((page, index) => (
                 <div 
@@ -289,132 +497,43 @@ export default function ChapterReaderPage() {
             </div>
           )}
 
-          {/* Navigation Buttons - มีกรอบต่อกับตอน */}
-          <div 
-            className="w-full max-w-4xl mx-auto border-l-2 border-r-2 border-black dark:border-gray-800 bg-muted/20"
-            style={{
-              padding: '8px' // padding เท่ากับกรอบตอนและรูป
-            }}
-          >
-            <div className="px-4 py-6 flex gap-4">
-              {prevChapter ? (
-                <Link
-                  href={`/comic/chapter/${prevChapter.slug}`}
-                  className="flex-1 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-center">
-                  &lt; ตอนก่อนหน้า
-                </Link>
-              ) : (
-                <div className="flex-1"></div>
-              )}
-              {nextChapter ? (
-                <Link
-                  href={`/comic/chapter/${nextChapter.slug}`}
-                  className="flex-1 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-center">
-                  ตอนถัดไป &gt;
-                </Link>
-              ) : (
-                <div className="flex-1"></div>
-              )}
+          {/* Navigation Buttons - กรอบแยกต่างหาก */}
+          <div className="w-full flex justify-center">
+            <div className="w-full max-w-4xl mx-auto border-l-2 border-r-2 border-b-2 border-black dark:border-gray-800 bg-muted/20">
+              <div className="px-4 py-6 flex gap-4">
+                {prevChapter ? (
+                  <Link
+                    href={`/comic/chapter/${prevChapter.slug}`}
+                    className="flex-1 px-6 py-3 border border-orange-500/50 bg-transparent text-foreground rounded-lg hover:bg-orange-500/10 hover:border-orange-500 transition-colors font-medium text-center flex items-center justify-center gap-2">
+                    <ChevronLeft className="w-4 h-4" />
+                    ตอนก่อนหน้า
+                  </Link>
+                ) : (
+                  <div className="flex-1"></div>
+                )}
+                {nextChapter ? (
+                  <Link
+                    href={`/comic/chapter/${nextChapter.slug}`}
+                    className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium text-center flex items-center justify-center gap-2">
+                    ตอนถัดไป
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
+                ) : (
+                  <div className="flex-1"></div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Comments Section - มีกรอบต่อกับ Navigation */}
-          <div 
-            className="w-full max-w-4xl mx-auto border-l-2 border-r-2 border-b-2 border-black dark:border-gray-800 bg-muted/20"
-            style={{
-              padding: '8px' // padding เท่ากับกรอบตอนและรูป
-            }}
-          >
-            <div className="px-4 border-t border-border pt-6 mt-6">
-              <h3 className="text-xl font-semibold text-foreground mb-4">
-                ความคิดเห็น ({chapter._count.comments})
-              </h3>
-
-              {loadingComments ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-                </div>
-              ) : comments.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">ยังไม่มีความคิดเห็น</p>
-              ) : (
-                <div className="space-y-6">
-                  {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-4">
-                      {/* Avatar */}
-                      <div className="flex-shrink-0">
-                        {comment.user.avatarUrl ? (
-                          <img
-                            src={comment.user.avatarUrl}
-                            alt={comment.user.name}
-                            className="w-10 h-10 rounded-full"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center">
-                            <span className="text-orange-500 font-medium">
-                              {comment.user.name.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Comment Content */}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-foreground">{comment.user.name}</span>
-                          <span className="text-sm text-muted-foreground">
-                            {formatThaiDate(comment.createdAt)}
-                          </span>
-                        </div>
-                        <p className="text-foreground mb-2">{comment.content}</p>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <button className="flex items-center gap-1 hover:text-foreground transition-colors">
-                            <Reply className="w-4 h-4" />
-                            <span>ตอบกลับ ({comment._count.replies})</span>
-                          </button>
-                        </div>
-
-                        {/* Replies */}
-                        {comment.replies.length > 0 && (
-                          <div className="mt-4 ml-4 space-y-4 border-l border-border pl-4">
-                            {comment.replies.map((reply) => (
-                              <div key={reply.id} className="flex gap-3">
-                                <div className="flex-shrink-0">
-                                  {reply.user.avatarUrl ? (
-                                    <img
-                                      src={reply.user.avatarUrl}
-                                      alt={reply.user.name}
-                                      className="w-8 h-8 rounded-full"
-                                    />
-                                  ) : (
-                                    <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center">
-                                      <span className="text-orange-500 text-sm font-medium">
-                                        {reply.user.name.charAt(0).toUpperCase()}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-medium text-foreground text-sm">{reply.user.name}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {formatThaiDate(reply.createdAt)}
-                                    </span>
-                                  </div>
-                                  <p className="text-foreground text-sm">{reply.content}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
+
+      {/* Recommended Manga Section */}
+      {chapter && chapter.manga && (
+        <div className="w-full max-w-4xl mx-auto px-4">
+          <RecommendedManga mangaId={chapter.manga.id} />
+        </div>
+      )}
     </div>
   );
 }

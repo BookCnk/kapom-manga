@@ -9,8 +9,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+interface Genre {
+  slug: string;
+  name: string;
+}
+
 interface SearchGenreFilterProps {
-  genres: string[];
+  genres: Genre[];
   currentGenre?: string;
 }
 
@@ -36,8 +41,8 @@ export default function SearchGenreFilter({
   };
 
   const selected = currentGenre && currentGenre !== "all" ? currentGenre : "all";
-  const selectedLabel =
-    selected === "all" ? "ทุกหมวด" : genres.find((g) => g === selected) ?? selected;
+  const selectedGenre = genres.find((g) => g.slug === selected);
+  const selectedLabel = selected === "all" ? "ทุกหมวด" : (selectedGenre?.name ?? selected);
 
   return (
     <DropdownMenu>
@@ -70,15 +75,15 @@ export default function SearchGenreFilter({
         </DropdownMenuItem>
         {genres.map((g) => (
           <DropdownMenuItem
-            key={g}
-            onClick={() => handleChange(g)}
+            key={g.slug}
+            onClick={() => handleChange(g.slug)}
             className={`rounded-lg px-2 py-1.5 ${
-              selected === g
+              selected === g.slug
                 ? "bg-orange-500/10 text-orange-500"
                 : "text-muted-foreground"
             }`}
           >
-            {g}
+            {g.name}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

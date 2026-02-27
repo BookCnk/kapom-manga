@@ -247,7 +247,7 @@ export default function FeaturedHero({
 
           <div className="flex items-center gap-3 pointer-events-auto">
             <Link
-              href={`/manga/${active.slug}`}
+              href={`/comic/${active.slug}`}
               className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2 shadow-md shadow-orange-500/30">
               <Play className="w-[18px] h-[18px]" strokeWidth={1.5} />
               อ่านตอนแรก

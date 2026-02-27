@@ -8,7 +8,7 @@ import { requireAuth } from "@/lib/api/auth";
 const createCommentSchema = z.object({
   mangaId: z.number().optional(),
   chapterId: z.number().optional(),
-  content: z.string().trim().min(1).max(5000),
+  content: z.string().trim().min(1).max(500),
   parentId: z.number().optional(),
 });
 
@@ -21,14 +21,30 @@ export async function POST(request: NextRequest) {
       throw new HttpError(400, "Either mangaId or chapterId is required");
     }
 
+    // For manga reviews (top-level comments without chapterId), check if user already has a review
+    if (body.mangaId && !body.chapterId && !body.parentId) {
+      const existingReview = await prisma.comment.findFirst({
+        where: {
+          userId: user.id,
+          mangaId: body.mangaId,
+          chapterId: null, // Only reviews (not chapter comments)
+          parentId: null, // Only top-level (not replies)
+        },
+      });
+
+      if (existingReview) {
+        throw new HttpError(400, "คุณเคยรีวิวเรื่องนี้แล้ว กรุณาแก้ไขรีวิวเดิมแทน");
+      }
+    }
+
     // Create comment
     const comment = await prisma.comment.create({
       data: {
         userId: user.id,
-        mangaId: body.mangaId,
-        chapterId: body.chapterId,
+        mangaId: body.mangaId ?? undefined,
+        chapterId: body.chapterId ?? undefined,
         content: body.content,
-        parentId: body.parentId,
+        parentId: body.parentId ?? undefined,
       },
       include: {
         user: {
@@ -73,9 +89,10 @@ export async function POST(request: NextRequest) {
           mangaId: number;
         }> = [];
 
-        // Notify users who bookmarked this manga
+        // Notify users who bookmarked this manga (excluding the creator)
         for (const bookmark of manga.bookmarks) {
-          if (bookmark.userId !== user.id) {
+          // Skip if it's the commenter or the creator (creator will get COMMENT_ON_MY_MANGA)
+          if (bookmark.userId !== user.id && bookmark.userId !== manga.creatorId) {
             notificationData.push({
               userId: bookmark.userId,
               type: "COMMENT_ON_BOOKMARKED_MANGA",
@@ -86,20 +103,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Notify the creator (if different from commenter)
+        // Always notify the creator when someone comments on their manga
         if (manga.creatorId && manga.creatorId !== user.id) {
-          // Check if creator already has a notification (from bookmark)
-          const creatorHasBookmark = manga.bookmarks.some(
-            (b) => b.userId === manga.creatorId
-          );
-
-          if (!creatorHasBookmark) {
-            notificationData.push({
-              userId: manga.creatorId,
-              type: "COMMENT_ON_MY_MANGA",
-              commentId: comment.id,
-              mangaId: manga.id,
-            });
-          }
+          notificationData.push({
+            userId: manga.creatorId,
+            type: "COMMENT_ON_MY_MANGA",
+            commentId: comment.id,
+            mangaId: manga.id,
+          });
         }
 
         // Create notifications in batch

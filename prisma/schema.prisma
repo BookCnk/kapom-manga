@@ -71,8 +71,8 @@ model User {
   passwordHash              String?
   role                      UserRole           @default(USER)
   bio                       String?
-  facebookUrl                String?
-  tiktokUrl                  String?
+  facebookUrl               String?
+  tiktokUrl                 String?
   avatarUrl                 String?
   bannerUrl                 String?
   mangas                    Manga[]            @relation("UserMangas")
@@ -80,6 +80,7 @@ model User {
   readingHistory            ReadingHistory[]
   likes                     Like[]
   comments                  Comment[]
+  commentLikes              CommentLike[]
   sessions                  Session[]
   wallet                    Wallet?
   coinTransactions          CoinTransaction[]
@@ -103,7 +104,10 @@ model Manga {
   status        MangaStatus @default(ONGOING)
   visibility    Visibility  @default(PUBLIC)
   isMature      Boolean     @default(false)
+  // ประเภทเนื้อหา + ประเทศต้นทาง (เช่น jp-manga, kr-manhwa)
+  contentType   String      @default("jp-manga")
   genreSlugs    Json?       @default("[]")
+  tagSlugs      String[]    @default([])
 
   // stats
   views      Int @default(0)
@@ -115,7 +119,6 @@ model Manga {
 
   // relations
   chapters       Chapter[]
-  tags           MangaTag[]
   bookmarks      Bookmark[]
   readingHistory ReadingHistory[]
   likes          Like[]
@@ -138,7 +141,7 @@ model Chapter {
   slug         String  @unique // เช่น "chapter-12" - unique globally like manga slug
   thumbnailUrl String?
   isLocked     Boolean @default(false)
-  priceCoins   Int     @default(0)
+  priceCoins   Float   @default(0)
 
   // stats
   views Int @default(0)
@@ -168,31 +171,6 @@ model Page {
 
   @@unique([chapterId, pageNo])
   @@index([chapterId])
-}
-
-model Tag {
-  id   Int    @id @default(autoincrement())
-  name String @unique
-  slug String @unique
-
-  mangas MangaTag[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([name])
-  @@index([slug])
-}
-
-model MangaTag {
-  mangaId Int
-  tagId   Int
-
-  manga Manga @relation(fields: [mangaId], references: [id], onDelete: Cascade)
-  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@id([mangaId, tagId])
-  @@index([tagId])
 }
 
 model Bookmark {
@@ -255,16 +233,33 @@ model Comment {
   manga   Manga?   @relation(fields: [mangaId], references: [id], onDelete: Cascade)
   chapter Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
-  parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies Comment[] @relation("CommentThread")
+  parent        Comment?       @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[]      @relation("CommentThread")
   notifications Notification[]
+  likes         CommentLike[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([userId, mangaId, parentId]) // 1 review per user per manga (top-level only, parentId is null)
   @@index([mangaId])
   @@index([chapterId])
   @@index([parentId])
+}
+
+model CommentLike {
+  id        Int @id @default(autoincrement())
+  userId    Int
+  commentId Int
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, commentId])
+  @@index([commentId])
+  @@index([userId])
 }
 
 model Session {
@@ -385,11 +380,11 @@ model Notification {
   commentId Int?
   mangaId   Int?
 
-  user    User    @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  user    User     @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
   comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
   manga   Manga?   @relation(fields: [mangaId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   readAt    DateTime?
 
   @@index([userId, isRead])

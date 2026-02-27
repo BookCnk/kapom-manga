@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Save, Upload, X, Image as ImageIcon, Plus } from "lucide-react";
+import { ArrowLeft, Save, Upload, X, Image as ImageIcon, Plus, ChevronDown, Globe2, Check } from "lucide-react";
 import Link from "next/link";
 import { MangaStatus, Visibility } from "@/lib/types/client-enums";
 import { cn } from "@/lib/utils";
+import { contentTypeOptions } from "@/lib/config/contentTypes";
+import { RichTextEditor } from "@/components/writer/RichTextEditor";
 import { toast } from "sonner";
 import AuthGuard from "@/components/writer/AuthGuard";
 import * as nsfwjs from "nsfwjs";
@@ -63,7 +65,6 @@ export default function CreateMangaPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [genres, setGenres] = useState<Genre[]>([]);
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [coverError, setCoverError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [originalTitleError, setOriginalTitleError] = useState<string | null>(null);
@@ -75,6 +76,14 @@ export default function CreateMangaPage() {
   const [tagInput, setTagInput] = useState("");
   const [nsfwModel, setNsfwModel] = useState<any>(null);
   const [checkingNsfw, setCheckingNsfw] = useState(false);
+  const [showContentTypeDropdown, setShowContentTypeDropdown] = useState(false);
+  const [showRatingDropdown, setShowRatingDropdown] = useState(false);
+  const [showMainGenreDropdown, setShowMainGenreDropdown] = useState(false);
+  const [showSubGenreDropdown, setShowSubGenreDropdown] = useState(false);
+  const mainGenreDropdownRef = useRef<HTMLDivElement | null>(null);
+  const subGenreDropdownRef = useRef<HTMLDivElement | null>(null);
+  const ratingDropdownRef = useRef<HTMLDivElement | null>(null);
+  const contentTypeDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const [formData, setFormData] = useState<{
     title: string;
@@ -87,6 +96,8 @@ export default function CreateMangaPage() {
     visibility: Visibility;
     isMature: boolean;
     contentType: string;
+    mainGenreSlug: string;
+    subGenreSlug: string;
   }>({
     title: "",
     slug: "",
@@ -98,6 +109,8 @@ export default function CreateMangaPage() {
     visibility: Visibility.PUBLIC,
     isMature: false,
     contentType: "",
+    mainGenreSlug: "",
+    subGenreSlug: "",
   });
 
   useEffect(() => {
@@ -118,6 +131,59 @@ export default function CreateMangaPage() {
     };
     loadNsfwModel();
   }, []);
+
+  // ปิด dropdown หมวดหมู่หลัก/รอง, ระดับเนื้อหา, ประเภทเนื้อหา เมื่อคลิกนอกกรอบ
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+
+      if (
+        showMainGenreDropdown &&
+        mainGenreDropdownRef.current &&
+        target &&
+        !mainGenreDropdownRef.current.contains(target)
+      ) {
+        setShowMainGenreDropdown(false);
+      }
+
+      if (
+        showSubGenreDropdown &&
+        subGenreDropdownRef.current &&
+        target &&
+        !subGenreDropdownRef.current.contains(target)
+      ) {
+        setShowSubGenreDropdown(false);
+      }
+
+      if (
+        showRatingDropdown &&
+        ratingDropdownRef.current &&
+        target &&
+        !ratingDropdownRef.current.contains(target)
+      ) {
+        setShowRatingDropdown(false);
+      }
+
+      if (
+        showContentTypeDropdown &&
+        contentTypeDropdownRef.current &&
+        target &&
+        !contentTypeDropdownRef.current.contains(target)
+      ) {
+        setShowContentTypeDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [
+    showMainGenreDropdown,
+    showSubGenreDropdown,
+    showRatingDropdown,
+    showContentTypeDropdown,
+  ]);
 
   useEffect(() => {
     const initializeGenres = async () => {
@@ -363,6 +429,12 @@ export default function CreateMangaPage() {
       return;
     }
 
+    // Require content type
+    if (!formData.contentType) {
+      toast.error("กรุณาเลือกประเภทเนื้อหา");
+      return;
+    }
+
     // Require cover image
     if (!coverPreview || !formData.coverUrl) {
       setCoverError("กรุณาอัพโหลดรูปปก");
@@ -397,7 +469,8 @@ export default function CreateMangaPage() {
           status: formData.status,
           visibility: formData.visibility,
           isMature: formData.isMature,
-          genreSlugs: selectedGenres,
+          contentType: formData.contentType || undefined,
+          genreSlugs: [formData.mainGenreSlug, formData.subGenreSlug].filter(Boolean),
           tags: tags,
         }),
       });
@@ -435,14 +508,6 @@ export default function CreateMangaPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const toggleGenre = (genreSlug: string) => {
-    setSelectedGenres((prev) =>
-      prev.includes(genreSlug)
-        ? prev.filter((id) => id !== genreSlug)
-        : [...prev, genreSlug],
-    );
   };
 
   const mainGenres = genres.filter((g) => g.type === "main");
@@ -640,10 +705,14 @@ export default function CreateMangaPage() {
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">
                     ชื่อเรื่อง <span className="text-red-500">*</span>
+                    <span className="text-xs text-muted-foreground ml-2">
+                      ({formData.title.length}/120)
+                    </span>
                   </label>
                   <input
                     type="text"
                     required
+                    maxLength={120}
                     value={formData.title}
                     onChange={(e) => {
                       setTitleError(null);
@@ -685,144 +754,283 @@ export default function CreateMangaPage() {
                   )}
                 </div>
 
-                <div>
+                <div ref={mainGenreDropdownRef}>
                   <label className="block text-sm font-medium text-foreground mb-2">
                     หมวดหมู่หลัก <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <select
-                      required
-                      value={selectedGenres.find((id) => mainGenres.some((g) => g.slug === id)) || ""}
-                      onChange={(e) => {
-                        const genreSlug = e.target.value;
-                        if (genreSlug) {
-                          const currentMain = selectedGenres.find((id) => mainGenres.some((g) => g.slug === id));
-                          setSelectedGenres([
-                            ...selectedGenres.filter((id) => id !== genreSlug && id !== currentMain),
-                            ...(genreSlug ? [genreSlug] : []),
-                          ]);
-                        }
-                      }}
-                      className={cn(
-                        "w-full px-4 py-2.5 pr-10",
-                        "border border-border rounded-lg",
-                        "bg-background text-foreground",
-                        "appearance-none cursor-pointer",
-                        "focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                        "hover:border-orange-500/50 transition-colors",
-                        "text-sm"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowMainGenreDropdown((open) => !open)
+                      }
+                      className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                    >
+                      <span className={cn(
+                        "text-sm",
+                        formData.mainGenreSlug ? "text-foreground" : "text-muted-foreground"
                       )}>
-                      <option value="" className="bg-background text-muted-foreground">เลือกหมวดหมู่หลัก</option>
-                      {mainGenres.map((genre) => (
-                        <option key={genre.slug} value={genre.slug} className="bg-background text-foreground">
-                          {genre.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-5 h-5 text-muted-foreground"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </div>
+                        {(() => {
+                          const selected = mainGenres.find(
+                            (g) => g.slug === formData.mainGenreSlug,
+                          );
+                          return selected ? selected.name : "เลือกหมวดหมู่หลัก";
+                        })()}
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    </button>
+
+                    {showMainGenreDropdown && (
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+                        {mainGenres.map((genre) => {
+                          const isSelected =
+                            formData.mainGenreSlug === genre.slug;
+                          return (
+                            <button
+                              key={genre.slug}
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  mainGenreSlug: genre.slug,
+                                }));
+                                setShowMainGenreDropdown(false);
+                              }}
+                              className={cn(
+                                "w-full px-3 py-2.5 flex items-center justify-between text-sm",
+                                "hover:bg-muted/70",
+                                isSelected
+                                  ? "bg-muted text-foreground"
+                                  : "text-foreground",
+                              )}
+                            >
+                              <span>{genre.name}</span>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-orange-500" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div>
+                <div ref={subGenreDropdownRef}>
                   <label className="block text-sm font-medium text-foreground mb-2">
                     หมวดหมู่รอง
                   </label>
                   <div className="relative">
-                    <select
-                      value={selectedGenres.find((id) => subGenres.some((g) => g.slug === id)) || ""}
-                      onChange={(e) => {
-                        const genreSlug = e.target.value;
-                        if (genreSlug) {
-                          const currentSub = selectedGenres.find((id) => subGenres.some((g) => g.slug === id));
-                          setSelectedGenres([
-                            ...selectedGenres.filter((id) => id !== genreSlug && id !== currentSub),
-                            ...(genreSlug ? [genreSlug] : []),
-                          ]);
-                        }
-                      }}
-                      className={cn(
-                        "w-full px-4 py-2.5 pr-10",
-                        "border border-border rounded-lg",
-                        "bg-background text-foreground",
-                        "appearance-none cursor-pointer",
-                        "focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
-                        "hover:border-orange-500/50 transition-colors",
-                        "text-sm"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowSubGenreDropdown((open) => !open)
+                      }
+                      className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                    >
+                      <span className={cn(
+                        "text-sm",
+                        formData.subGenreSlug ? "text-foreground" : "text-muted-foreground"
                       )}>
-                      <option value="" disabled className="bg-background text-muted-foreground">
-                        {subGenres.length === 0 ? "กำลังโหลด..." : "เลือกหมวดหมู่รอง"}
-                      </option>
-                      {subGenres.length === 0 ? (
-                        <option value="" disabled className="bg-background text-muted-foreground">
-                          ไม่มีข้อมูล กรุณา seed ข้อมูล genres
-                        </option>
-                      ) : (
-                        subGenres.map((genre) => (
-                          <option key={genre.slug} value={genre.slug} className="bg-background text-foreground">
-                            {genre.name}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <svg
-                        className="w-5 h-5 text-muted-foreground"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </div>
+                        {(() => {
+                          const selected = subGenres.find(
+                            (g) => g.slug === formData.subGenreSlug,
+                          );
+                          if (!selected) {
+                            return subGenres.length === 0
+                              ? "กำลังโหลด..."
+                              : "เลือกหมวดหมู่รอง";
+                          }
+                          return selected.name;
+                        })()}
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    </button>
+
+                    {showSubGenreDropdown && (
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+                        {subGenres.length === 0 ? (
+                          <div className="px-3 py-2.5 text-sm text-muted-foreground">
+                            ไม่มีข้อมูล กรุณา seed ข้อมูล genres
+                          </div>
+                        ) : (
+                          subGenres.map((genre) => {
+                            const isSelected =
+                              formData.subGenreSlug === genre.slug;
+                            return (
+                              <button
+                                key={genre.slug}
+                                type="button"
+                                onClick={() => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    subGenreSlug: genre.slug,
+                                  }));
+                                  setShowSubGenreDropdown(false);
+                                }}
+                                className={cn(
+                                  "w-full px-3 py-2.5 flex items-center justify-between text-sm",
+                                  "hover:bg-muted/70 text-foreground",
+                                  isSelected
+                                    ? "bg-muted text-foreground"
+                                    : "",
+                                )}
+                              >
+                                <span>{genre.name}</span>
+                                {isSelected && (
+                                  <Check className="w-4 h-4 text-orange-500" />
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div>
+                <div ref={ratingDropdownRef}>
                   <label className="block text-sm font-medium text-foreground mb-2">
                     ระดับของเนื้อหา (Rating) <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    required
-                    value={formData.isMature ? "mature" : "general"}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, isMature: e.target.value === "mature" }))}
-                    className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50">
-                    <option value="general">ทั่วไป</option>
-                    <option value="mature">18+</option>
-                  </select>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowRatingDropdown((open) => !open)
+                      }
+                      className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                    >
+                      <span className="text-sm text-foreground">
+                        {formData.isMature ? "18+" : "ทั่วไป"}
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    </button>
+
+                    {showRatingDropdown && (
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg">
+                        {[
+                          { value: "general", label: "ทั่วไป", isMature: false },
+                          { value: "mature", label: "18+", isMature: true },
+                        ].map((opt) => {
+                          const isSelected =
+                            formData.isMature === opt.isMature;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  isMature: opt.isMature,
+                                }));
+                                setShowRatingDropdown(false);
+                              }}
+                              className={cn(
+                                "w-full px-3 py-2.5 flex items-center justify-between text-sm",
+                                "hover:bg-muted/70",
+                                isSelected
+                                  ? "bg-muted text-foreground"
+                                  : "text-foreground",
+                              )}
+                            >
+                              <span>{opt.label}</span>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-orange-500" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div>
+                <div ref={contentTypeDropdownRef}>
                   <label className="block text-sm font-medium text-foreground mb-2">
                     ประเภทเนื้อหา <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    required
-                    value={formData.contentType}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, contentType: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50">
-                    <option value="">เลือกประเภทเนื้อหา</option>
-                    <option value="manga">มังงะ</option>
-                    <option value="manhwa">มังฮวา</option>
-                    <option value="manhua">มังฮวา (จีน)</option>
-                    <option value="comic">การ์ตูน</option>
-                  </select>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowContentTypeDropdown((open) => !open)
+                      }
+                      className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const selected = contentTypeOptions.find(
+                            (opt) => opt.value === formData.contentType,
+                          );
+                          if (!selected) {
+                            return (
+                              <>
+                                <Globe2 className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">
+                                  เลือกประเภทเนื้อหา
+                                </span>
+                              </>
+                            );
+                          }
+                          return (
+                            <>
+                              <img
+                                src={selected.iconUrl}
+                                alt={selected.label}
+                                className="w-4 h-4 rounded-full object-cover"
+                              />
+                              <span className="text-sm text-foreground">
+                                {selected.label}
+                              </span>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    </button>
+
+                    {showContentTypeDropdown && (
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+                        {contentTypeOptions.map((opt) => {
+                          const isSelected =
+                            formData.contentType === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  contentType: opt.value,
+                                }));
+                                setShowContentTypeDropdown(false);
+                              }}
+                              className={cn(
+                                "w-full px-3 py-2.5 flex items-center gap-2 text-sm",
+                                "hover:bg-muted/70",
+                                isSelected
+                                  ? "bg-muted text-foreground"
+                                  : "text-foreground",
+                              )}
+                            >
+                              <img
+                                src={opt.iconUrl}
+                                alt={opt.label}
+                                className="w-4 h-4 rounded-full object-cover"
+                              />
+                              <span className="flex-1 text-left">
+                                {opt.label}
+                              </span>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-orange-500" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -833,20 +1041,15 @@ export default function CreateMangaPage() {
                 ข้อมูลเบื้องต้น/แนะนำเรื่อง/เรื่องย่อ
               </label>
               <p className="text-xs text-muted-foreground mb-2">
-                จำกัดไม่เกิน 2000 ตัวอักษร ({formData.description.length}/2000)
+                จำกัดไม่เกิน 2000 ตัวอักษร
               </p>
-              <textarea
+              <RichTextEditor
                 value={formData.description}
-                onChange={(e) => {
+                onChange={(html) => {
                   setDescriptionError(null);
-                  setFormData((prev) => ({ ...prev, description: e.target.value }));
+                  setFormData((prev) => ({ ...prev, description: html }));
                 }}
                 maxLength={2000}
-                rows={8}
-                className={cn(
-                  "w-full px-4 py-3 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 resize-none",
-                  descriptionError ? "border-red-500" : "border-border focus:border-orange-500/50"
-                )}
                 placeholder="พิมพ์เนื้อหาตรงนี้"
               />
               {descriptionError && (

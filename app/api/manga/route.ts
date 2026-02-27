@@ -13,11 +13,19 @@ import { handleRouteError, ok } from "@/lib/api/http";
 import { requireAuth } from "@/lib/api/auth";
 import { ensureTranslatorOrAdmin } from "@/lib/api/permissions";
 import { allGenres, getGenreBySlug } from "@/lib/config/genres";
+import { contentTypeValues } from "@/lib/config/contentTypes";
+
+// zod enum ต้องการ tuple type จึงต้อง cast ให้ชัดเจน
+const contentTypeEnum = z.enum(
+  contentTypeValues as [string, ...string[]],
+);
 
 const createMangaSchema = z.object({
   slug: z.string().trim().min(2).max(120),
-  title: z.string().trim().min(1).max(200),
-  originalTitle: z.string().trim().max(200).optional(),
+  // จำกัดชื่อเรื่องสูงสุด 120 ตัวอักษร
+  title: z.string().trim().min(1).max(120),
+  // จำกัดชื่อเรื่องต้นฉบับสูงสุด 120 ตัวอักษร
+  originalTitle: z.string().trim().max(120).optional(),
   description: z.string().trim().max(5000).optional(),
   coverUrl: z
     .union([z.string().url(), z.literal("")])
@@ -30,6 +38,7 @@ const createMangaSchema = z.object({
   status: z.nativeEnum(MangaStatus).default(MangaStatus.ONGOING),
   visibility: z.nativeEnum(Visibility).default(Visibility.PUBLIC),
   isMature: z.boolean().default(false),
+  contentType: contentTypeEnum.default("jp-manga"),
   genreSlugs: z.array(z.string().trim().min(1)).optional().default([]),
   tags: z.array(z.string().trim().min(1).max(20)).optional().default([]),
 });
@@ -109,6 +118,7 @@ export async function GET(request: NextRequest) {
         createdAt: true,
         updatedAt: true,
         genreSlugs: true,
+        tagSlugs: true,
         creator: { select: { id: true, name: true, email: true, username: true } },
         chapters: {
           select: { createdAt: true },
@@ -238,6 +248,22 @@ export async function POST(request: NextRequest) {
 
     // Create manga with genres and tags in a transaction
     const manga = await prisma.$transaction(async (tx) => {
+      // Process tags - convert to slugs
+      const tags = Array.isArray(body.tags) ? body.tags : [];
+      const tagSlugs = tags.map((tagName: string) => {
+        // Generate slug from tag name (support Thai and other unicode characters)
+        const tagSlug = tagName
+          .toLowerCase()
+          .trim()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-z0-9\u0E00-\u0E7F-]/g, "")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, "");
+
+        // If slug is still empty, use encodeURIComponent as fallback
+        return tagSlug || encodeURIComponent(tagName.trim()).toLowerCase();
+      }).filter((slug) => slug.length > 0);
+
       const newManga = await tx.manga.create({
         data: {
           slug: body.slug,
@@ -249,75 +275,12 @@ export async function POST(request: NextRequest) {
           status: body.status,
           visibility: body.visibility,
           isMature: body.isMature,
+          contentType: body.contentType,
           genreSlugs: genreSlugs,
+          tagSlugs: tagSlugs,
           creatorId: actor.id,
         },
       });
-
-      // Create tags if provided
-      const tags = Array.isArray(body.tags) ? body.tags : [];
-      if (tags.length > 0) {
-        try {
-          // Create or get tags
-          const tagPromises = tags.map(async (tagName: string) => {
-            // Generate slug from tag name (support Thai and other unicode characters)
-            const tagSlug = tagName
-              .toLowerCase()
-              .trim()
-              .replace(/\s+/g, "-")
-              .replace(/[^a-z0-9\u0E00-\u0E7F-]/g, "")
-              .replace(/-+/g, "-")
-              .replace(/^-|-$/g, "");
-
-            // If slug is still empty, use encodeURIComponent as fallback
-            const finalSlug = tagSlug || encodeURIComponent(tagName.trim()).toLowerCase();
-
-            // Try to find existing tag using upsert
-            const tag = await tx.tag.upsert({
-              where: { slug: finalSlug },
-              update: {},
-              create: {
-                name: tagName,
-                slug: finalSlug,
-              },
-            });
-
-            return tag.id;
-          });
-
-          const tagIds = await Promise.all(tagPromises);
-
-          // Create manga-tag relations (skip duplicates)
-          if (tagIds.length > 0) {
-            // Get existing relations to avoid duplicates
-            const existingRelations = await tx.mangaTag.findMany({
-              where: {
-                mangaId: newManga.id,
-                tagId: { in: tagIds },
-              },
-            });
-
-            const existingTagIds = new Set(
-              existingRelations.map((r) => r.tagId),
-            );
-            const newTagIds = tagIds.filter((id) => !existingTagIds.has(id));
-
-            if (newTagIds.length > 0) {
-              await tx.mangaTag.createMany({
-                data: newTagIds.map((tagId) => ({
-                  mangaId: newManga.id,
-                  tagId,
-                })),
-                skipDuplicates: true,
-              });
-            }
-          }
-        } catch (tagError) {
-          console.error("Error creating tags:", tagError);
-          // Continue without tags if tag creation fails
-          // Don't throw error to allow manga creation to succeed
-        }
-      }
 
       return newManga;
     });

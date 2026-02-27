@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       ...(unreadOnly && { isRead: false }),
     };
 
-    const [notifications, total] = await Promise.all([
+    const [notifications, total, unreadCount] = await Promise.all([
       prisma.notification.findMany({
         where,
         include: {
@@ -49,10 +49,18 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
       }),
       prisma.notification.count({ where }),
+      // Get unread count in the same query to avoid separate API call
+      prisma.notification.count({
+        where: {
+          userId: user.id,
+          isRead: false,
+        },
+      }),
     ]);
 
     return ok({
       notifications,
+      unreadCount,
       pagination: {
         page,
         limit,

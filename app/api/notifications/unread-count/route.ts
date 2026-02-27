@@ -1,22 +1,11 @@
-export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { handleRouteError, ok } from "@/lib/api/http";
-import { requireAuth } from "@/lib/api/auth";
+import { HttpError, handleRouteError } from "@/lib/api/http";
 
+/**
+ * This endpoint has been removed.
+ * Unread count is now included in /api/notifications response.
+ * This route returns 404 to prevent any cached code from calling it.
+ */
 export async function GET(request: NextRequest) {
-  try {
-    const user = await requireAuth(request);
-
-    const count = await prisma.notification.count({
-      where: {
-        userId: user.id,
-        isRead: false,
-      },
-    });
-
-    return ok({ count });
-  } catch (error) {
-    return handleRouteError(error);
-  }
+  return handleRouteError(new HttpError(404, "This endpoint has been removed. Use /api/notifications instead."));
 }

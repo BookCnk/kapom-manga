@@ -6,10 +6,8 @@ import dynamic from "next/dynamic";
 import AuthGuard from "@/components/writer/AuthGuard";
 import {
   mockMangaStats,
-  mockNovelStats,
   getMockRevenueData,
   type MangaStats,
-  type NovelStats,
   type RevenueData,
 } from "@/lib/mock/writerStats";
 
@@ -81,7 +79,6 @@ const FIRST_YEAR_BE = 2567; // First year when coins were received (adjust as ne
 export default function WriterOverviewPage() {
   const { user } = useAuth();
   const [mangaStats, setMangaStats] = useState<MangaStats | null>(null);
-  const [novelStats, setNovelStats] = useState<NovelStats | null>(null);
   const [revenueData, setRevenueData] = useState<RevenueData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -102,7 +99,6 @@ export default function WriterOverviewPage() {
           // Use mock data for testing
           await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate loading
           setMangaStats(mockMangaStats);
-          setNovelStats(mockNovelStats);
           // Convert BE year to AD year for mock data function
           const yearAD = selectedYear - 543;
           setRevenueData(getMockRevenueData(selectedMonth, yearAD));
@@ -115,7 +111,6 @@ export default function WriterOverviewPage() {
 
         // Initialize with default values
         let mangaData: MangaStats | null = null;
-        let novelData: NovelStats | null = null;
         let revenue: RevenueData | null = null;
 
         // Fetch stats
@@ -128,7 +123,6 @@ export default function WriterOverviewPage() {
             const statsData = await statsResponse.json();
             if (statsData.success) {
               mangaData = statsData.data.manga;
-              novelData = statsData.data.novel;
             }
           } else {
             console.error("Stats API error:", statsResponse.status, await statsResponse.text());
@@ -170,15 +164,6 @@ export default function WriterOverviewPage() {
           comments: 0,
           totalSales: 0,
         });
-        setNovelStats(novelData || {
-          stories: 0,
-          episodes: 0,
-          views: 0,
-          likes: 0,
-          bookmarks: 0,
-          comments: 0,
-          totalSales: 0,
-        });
         
         // Set revenue with default empty data
         if (!revenue) {
@@ -199,15 +184,6 @@ export default function WriterOverviewPage() {
         console.error("Failed to fetch data:", error);
         // Set default values on error
         setMangaStats({
-          stories: 0,
-          episodes: 0,
-          views: 0,
-          likes: 0,
-          bookmarks: 0,
-          comments: 0,
-          totalSales: 0,
-        });
-        setNovelStats({
           stories: 0,
           episodes: 0,
           views: 0,
@@ -292,55 +268,6 @@ export default function WriterOverviewPage() {
         <div>
           <h1 className="text-2xl font-medium text-foreground">ภาพรวมบัญชี</h1>
         </div>
-
-      {/* Novel Overview */}
-      <div className="bg-card border border-border rounded-xl p-6">
-        <h2 className="text-lg font-medium text-foreground mb-4">ข้อมูลภาพรวมนิยาย</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">จำนวนเรื่อง</p>
-            <p className="text-xl font-semibold text-foreground mt-1">
-              {novelStats?.stories || 0}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">จำนวนตอน</p>
-            <p className="text-xl font-semibold text-foreground mt-1">
-              {novelStats?.episodes || 0}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">จำนวนยอดวิว</p>
-            <p className="text-xl font-semibold text-foreground mt-1">
-              {formatNumber(novelStats?.views || 0)}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">จำนวนยอดคนชื่นชอบ</p>
-            <p className="text-xl font-semibold text-foreground mt-1">
-              {formatNumber(novelStats?.likes || 0)}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">จำนวนยอด Bookmark</p>
-            <p className="text-xl font-semibold text-foreground mt-1">
-              {formatNumber(novelStats?.bookmarks || 0)}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">จำนวนยอด Comments</p>
-            <p className="text-xl font-semibold text-foreground mt-1">
-              {formatNumber(novelStats?.comments || 0)}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">ยอดขายรวม</p>
-            <p className="text-xl font-semibold text-foreground mt-1">
-              {formatNumber(novelStats?.totalSales || 0)}
-            </p>
-          </div>
-        </div>
-      </div>
 
       {/* Manga Overview */}
       <div className="bg-card border border-border rounded-xl p-6">

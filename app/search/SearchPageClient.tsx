@@ -6,7 +6,7 @@ import SearchBar from "@/components/home/SearchBar";
 import SearchGenreFilter from "@/components/home/SearchGenreFilter";
 import SearchResultCard from "@/components/search/SearchResultCard";
 import type { MangaCard } from "@/lib/mock/homeData";
-import { getGenreBySlug } from "@/lib/config/genres";
+import { getGenreBySlug, mainGenres } from "@/lib/config/genres";
 
 const ITEMS_PER_PAGE = 12;
 
@@ -25,25 +25,21 @@ export default function SearchPageClient() {
   const rawQuery = searchParams?.get("q") ?? "";
   const normalizedQuery = normalize(rawQuery);
   const tokens = normalizedQuery.length ? normalizedQuery.split(" ").filter(Boolean) : [];
-  const selectedGenre = (searchParams?.get("genre") ?? "all").toString();
+  const selectedGenreSlug = (searchParams?.get("genre") ?? "all").toString();
+  
+  // Convert slug to genre name for filtering
+  const selectedGenre = selectedGenreSlug === "all" 
+    ? "all" 
+    : (getGenreBySlug(selectedGenreSlug)?.name ?? selectedGenreSlug);
 
   const [mangas, setMangas] = useState<MangaCard[]>([]);
-  const [genres, setGenres] = useState<string[]>([]);
+  const [genres] = useState(mainGenres); // Use mainGenres from config directly
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-
-        const genresResponse = await fetch("/api/genres");
-        const genresData = await genresResponse.json();
-        if (genresData.success && genresData.data?.genres) {
-          const genreNames = genresData.data.genres
-            .filter((g: { parentId: number | null }) => !g.parentId)
-            .map((g: { name: string }) => g.name);
-          setGenres(genreNames);
-        }
 
         let allMangas: Array<Record<string, unknown>> = [];
         let page = 1;
@@ -93,6 +89,11 @@ export default function SearchPageClient() {
           
           const totalChapters = manga._count?.chapters || 0;
 
+          // แท็กจากฐานข้อมูล (tagSlugs: string[])
+          const dbTags: string[] = Array.isArray(manga.tagSlugs)
+            ? (manga.tagSlugs as string[])
+            : [];
+
           // ใช้วันที่เพิ่มตอนล่าสุด (latestChapterAt) หรือ createdAt ของมังงะ
           // ไม่ใช้ updatedAt เพราะจะเปลี่ยนทุกครั้งที่แก้ไขข้อมูลมังงะ
           const contentDate = manga.latestChapterAt || manga.createdAt;
@@ -129,7 +130,7 @@ export default function SearchPageClient() {
             latestUpdatedLabel,
             updatedAt: updatedAtString,
             isNew: false,
-            tags: [],
+            tags: dbTags,
             genre: genreName as any,
             genres: genreNames, // array ของ genre names (สูงสุด 2)
             translator: manga.creator?.name || "RTN Team",
@@ -163,7 +164,7 @@ export default function SearchPageClient() {
   // Reset visibleCount เมื่อ results เปลี่ยน (เช่น เปลี่ยนคำค้นหาหรือ genre)
   useEffect(() => {
     setVisibleCount(ITEMS_PER_PAGE);
-  }, [normalizedQuery, selectedGenre]);
+  }, [normalizedQuery, selectedGenreSlug]);
 
   const visibleResults = results.slice(0, visibleCount);
   const hasMore = visibleCount < results.length;
@@ -199,7 +200,7 @@ export default function SearchPageClient() {
         </section>
 
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs w-full">
-          <SearchGenreFilter genres={genres} currentGenre={selectedGenre} />
+          <SearchGenreFilter genres={genres} currentGenre={selectedGenreSlug} />
           <button className="w-full flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
             <span>สถานะ</span>
             <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>

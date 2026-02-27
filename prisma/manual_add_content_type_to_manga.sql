@@ -1,0 +1,3 @@
+ALTER TABLE "Manga"
+ADD COLUMN IF NOT EXISTS "contentType" TEXT NOT NULL DEFAULT 'jp-manga';
+

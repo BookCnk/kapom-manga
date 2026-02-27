@@ -165,15 +165,17 @@ export default function UserMenu() {
           </div>
 
           <div className="py-1">
-            <Link
+            <a
               href="/writer"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
               onClick={() => setIsOpen(false)}>
               <PenTool className="w-4 h-4" />
               {user.role === UserRole.TRANSLATOR || user.role === UserRole.ADMIN
                 ? "หน้านักเขียน"
                 : "สมัครนักเขียน"}
-            </Link>
+            </a>
 
             <Link
               href="/reading-history"

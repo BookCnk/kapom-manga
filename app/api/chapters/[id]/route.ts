@@ -8,6 +8,36 @@ import {
   ensureCanManageChapter,
   ensureTranslatorOrAdmin,
 } from "@/lib/api/permissions";
+import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
+
+function getS3Client() {
+  const endpoint = process.env.S3_ENDPOINT;
+  const port = process.env.S3_PORT;
+  const useSsl = process.env.S3_USE_SSL === "true";
+  const accessKeyId = process.env.S3_ACCESS_KEY;
+  const secretAccessKey = process.env.S3_SECRET_KEY;
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) {
+    return null; // ไม่มี S3 config → ข้ามการลบรูป
+  }
+
+  const protocol = useSsl ? "https" : "http";
+  const fullEndpoint = port ? `${protocol}://${endpoint}:${port}` : `${protocol}://${endpoint}`;
+
+  return new S3Client({
+    region: "us-east-1",
+    endpoint: fullEndpoint,
+    forcePathStyle: true,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+}
+
+function extractKeyFromUrl(url: string, bucket: string): string | null {
+  const marker = `/${bucket}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  return url.substring(idx + marker.length);
+}
 
 type Params = {
   params: {
@@ -21,7 +51,7 @@ const updateChapterSchema = z.object({
   slug: z.string().trim().min(1).max(120).optional(),
   thumbnailUrl: z.string().url().nullable().optional(),
   isLocked: z.boolean().optional(),
-  priceCoins: z.number().int().min(0).optional(),
+  priceCoins: z.number().min(0).optional().transform((v) => v !== undefined ? Math.round(v * 100) / 100 : undefined),
   publishedAt: z.string().datetime().nullable().optional(),
 });
 
@@ -92,7 +122,40 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const chapterId = parseChapterId(params.id);
     await ensureCanManageChapter(actor, chapterId);
 
+    // ดึงรูปทั้งหมดของตอนนี้ก่อนลบ
+    const pages = await prisma.page.findMany({
+      where: { chapterId },
+      select: { imageUrl: true },
+    });
+
+    // ลบตอนจากฐานข้อมูล (cascade จะลบ pages ด้วย)
     await prisma.chapter.delete({ where: { id: chapterId } });
+
+    // ลบรูปจาก S3 (ทำหลังลบ DB สำเร็จแล้ว)
+    const bucket = process.env.S3_BUCKET_NAME;
+    const s3 = getS3Client();
+
+    if (s3 && bucket && pages.length > 0) {
+      const imageUrls = pages
+        .map((p) => p.imageUrl)
+        .filter((url): url is string => !!url);
+
+      // ลบรูปแบบ fire-and-forget ไม่ให้กระทบ response
+      Promise.allSettled(
+        imageUrls.map(async (url) => {
+          const key = extractKeyFromUrl(url, bucket);
+          if (!key) return;
+          try {
+            await s3.send(
+              new DeleteObjectCommand({ Bucket: bucket, Key: key }),
+            );
+          } catch (err) {
+            console.error("Failed to delete S3 image:", url, err);
+          }
+        }),
+      ).catch(() => {});
+    }
+
     return ok({ success: true });
   } catch (error) {
     return handleRouteError(error);

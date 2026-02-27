@@ -21,7 +21,7 @@ const createChapterSchema = z.object({
   slug: z.string().trim().min(1).max(120),
   thumbnailUrl: z.string().url().optional(),
   isLocked: z.boolean().default(false),
-  priceCoins: z.number().int().min(0).default(0),
+  priceCoins: z.number().min(0).default(0).transform((v) => Math.round(v * 100) / 100),
   publishedAt: z.string().datetime().optional(),
 });
 

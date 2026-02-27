@@ -31,7 +31,7 @@ export default function MangaCard({
 
   return (
     <Link
-      href={`/manga/${item.slug}`}
+      href={`/comic/${item.slug}`}
       className={[
         "group block",
         compact ? "rounded-xl" : "rounded-2xl",

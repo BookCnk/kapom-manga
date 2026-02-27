@@ -99,12 +99,12 @@ export default function SearchResultCard({ item }: Props) {
           )}
         </div>
         <div className="flex-1 min-w-0 space-y-2.5">
-          {/* ชื่อเรื่อง (กดเข้าอ่านได้) */}
-          <h2 className="text-base sm:text-lg font-semibold text-foreground line-clamp-2 leading-snug">
+          {/* ชื่อเรื่อง (กดเข้าอ่านได้) - จำกัด 1 บรรทัดบนสุด ถ้ายาวเกินใช้ ... */}
+          <h2 className="text-base sm:text-lg font-semibold text-foreground leading-snug">
             <button
               type="button"
               onClick={handleCardClick}
-              className="text-left hover:text-orange-400 transition-colors"
+              className="block w-full text-left hover:text-orange-400 transition-colors truncate"
             >
               {item.title}
             </button>
@@ -161,8 +161,8 @@ export default function SearchResultCard({ item }: Props) {
             )}
           </div>
 
-          {/* คำอธิบายสั้น ๆ อยู่ด้านล่างสุดของคอลัมน์ข้อมูล */}
-          <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+          {/* คำอธิบายสั้น ๆ จำกัด 3 บรรทัด ถ้ายาวเกินใช้ ... และตัดคำยาว */}
+          <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed break-words">
             {item.description}
           </p>
         </div>

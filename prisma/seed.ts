@@ -75,32 +75,10 @@ async function main() {
   console.log("🌱 Starting seed...");
 
   // Seed genres
-  console.log("📚 Seeding genres...");
-  for (const name of mainGenres) {
-    const slug = generateGenreSlug(name);
-    await prisma.tag.upsert({
-      where: { slug },
-      update: { name },
-      create: {
-        slug,
-        name,
-      },
-    });
-  }
-  console.log(`✅ Created ${mainGenres.length} main genres`);
-
-  for (const name of subGenres) {
-    const slug = `sub-${generateGenreSlug(name)}`;
-    await prisma.tag.upsert({
-      where: { slug },
-      update: { name },
-      create: {
-        slug,
-        name,
-      },
-    });
-  }
-  console.log(`✅ Created ${subGenres.length} sub genres`);
+  // เดิมใช้ตาราง Tag ผ่าน prisma.tag แต่ตอนนี้เราเก็บ genre และ tag ไว้ที่
+  // config (`lib/config/genres.ts`) และเก็บแท็กของมังงะใน `Manga.tagSlugs` โดยตรง
+  // เลยไม่ต้องเขียนข้อมูลลงตาราง Tag อีกต่อไป
+  console.log("📚 Seeding genres... (ข้ามการสร้าง Tag แล้วใช้ config แทน)");
 
   // Create or get translator user
   let translator = await prisma.user.findUnique({

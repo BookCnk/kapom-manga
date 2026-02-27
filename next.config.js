@@ -7,6 +7,12 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'images.unsplash.com',
       },
+      {
+        protocol: 'http',
+        hostname: '72.61.208.81',
+        port: '9000',
+        pathname: '/manga-images/**',
+      },
     ],
   },
 }
