@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Eye, BookOpen, User, CameraOff } from "lucide-react";
+import { Eye, BookOpen, User, CameraOff, MessageCircle } from "lucide-react";
 import type { MangaCard as MangaCardType } from "@/lib/mock/homeData";
 
 type Props = {
@@ -28,6 +28,7 @@ export default function MangaCard({
   const [hasImageError, setHasImageError] = useState(false);
   const isHorizontal = variant === "horizontal";
   const latest = item.latestChapter ?? item.totalChapters;
+  const isCompleted = item.isCompleted;
 
   return (
     <Link
@@ -124,14 +125,21 @@ export default function MangaCard({
               : "p-3"
         }>
         {/* Title */}
-        <h3
-          className={
-            compact
-              ? "text-[13px] font-semibold text-foreground line-clamp-1 group-hover:text-orange-600 transition-colors"
-              : "text-base font-semibold text-foreground line-clamp-2 group-hover:text-orange-600 transition-colors"
-          }>
-          {item.title}
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3
+            className={
+              compact
+                ? "text-[13px] font-semibold text-foreground line-clamp-1 group-hover:text-orange-600 transition-colors truncate flex-1"
+                : "text-base font-semibold text-foreground line-clamp-1 group-hover:text-orange-600 transition-colors truncate flex-1"
+            }>
+            {item.title}
+          </h3>
+          {isCompleted && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-600 border border-green-500/20 flex-shrink-0">
+              จบ
+            </span>
+          )}
+        </div>
 
         {/* 🔥 Translator — แสดงทุกโหมด */}
         <div className="flex items-center gap-1 mt-1 text-muted-foreground">
@@ -167,13 +175,18 @@ export default function MangaCard({
                 : "flex items-center gap-3 text-xs text-muted-foreground"
             }>
             <span className="inline-flex items-center gap-0.5">
+              <BookOpen className={compact ? "h-3 w-3" : "h-4 w-4"} />
+              {compact ? item.totalChapters : `${item.totalChapters} ตอน`}
+            </span>
+
+            <span className="inline-flex items-center gap-0.5">
               <Eye className={compact ? "h-3 w-3" : "h-4 w-4"} />
               {formatViews(item.views)}
             </span>
 
             <span className="inline-flex items-center gap-0.5">
-              <BookOpen className={compact ? "h-3 w-3" : "h-4 w-4"} />
-              {compact ? item.totalChapters : `${item.totalChapters} ตอน`}
+              <MessageCircle className={compact ? "h-3 w-3" : "h-4 w-4"} />
+              {item.comments ?? 0}
             </span>
           </div>
 

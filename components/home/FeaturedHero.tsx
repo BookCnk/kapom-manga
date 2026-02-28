@@ -2,16 +2,34 @@
 
 import Link from "next/link";
 import {
-  Bookmark,
+  BookmarkIcon,
   ChevronLeft,
   ChevronRight,
   Eye,
   Play,
-  Star,
+  Heart,
   CameraOff,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MangaCard as MangaCardType } from "@/lib/mock/homeData";
+
+type ReadingHistory = {
+  mangaId: string;
+  chapterId: string;
+  chapterSlug: string;
+};
+
+// Helper to strip HTML tags
+function stripHtml(html: string): string {
+  if (!html) return "";
+  return html.replace(/<[^>]*>/g, "").trim();
+}
+
+function formatViews(v: number) {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(v);
+}
 
 export default function FeaturedHero({
   featured,
@@ -23,6 +41,7 @@ export default function FeaturedHero({
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
+  const [readingHistory, setReadingHistory] = useState<ReadingHistory[]>([]);
 
   // drag/swipe
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -66,16 +85,55 @@ export default function FeaturedHero({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [slides.length]);
 
+  // Fetch reading history
+  useEffect(() => {
+    const fetchReadingHistory = async () => {
+      try {
+        const response = await fetch("/api/reading-history?limit=50");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.history) {
+            setReadingHistory(
+              data.history.map((h: { mangaId: string; chapterId: string; chapter: { slug: string } }) => ({
+                mangaId: h.mangaId,
+                chapterId: h.chapterId,
+                chapterSlug: h.chapter?.slug || "",
+              }))
+            );
+          }
+        }
+      } catch {
+        // Silent fail - user might not be logged in
+      }
+    };
+    fetchReadingHistory();
+  }, []);
+
   if (!slides.length) return null;
 
   const active = slides[activeIndex];
 
   const viewsText =
     typeof active.views === "number"
-      ? `${(active.views / 1000).toFixed(1)}K`
+      ? active.views >= 1000
+        ? `${(active.views / 1000).toFixed(1)}K`
+        : String(active.views)
       : "—";
-  const ratingText =
-    typeof active.rating === "number" ? active.rating.toFixed(1) : "—";
+  
+  const bookmarksText =
+    typeof active.bookmarks === "number"
+      ? active.bookmarks >= 1000
+        ? `${(active.bookmarks / 1000).toFixed(1)}K`
+        : String(active.bookmarks)
+      : "—";
+
+  // Check if user has read this manga
+  const readHistory = readingHistory.find(h => h.mangaId === active.id);
+  const hasRead = !!readHistory;
+  const readButtonText = hasRead ? "อ่านต่อ" : "อ่านตอนแรก";
+  const readButtonHref = hasRead && readHistory?.chapterSlug
+    ? `/comic/chapter/${readHistory.chapterSlug}`
+    : `/comic/${active.slug}`;
 
   const setTrackTransformPx = (px: number) => {
     const el = trackRef.current;
@@ -220,7 +278,11 @@ export default function FeaturedHero({
               </span>
             ) : null}
 
-            {active.genre ? (
+            {active.genres && active.genres.length > 0 ? (
+              <span className="bg-white/20 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-md font-medium">
+                {active.genres.join(" x ")}
+              </span>
+            ) : active.genre ? (
               <span className="bg-white/20 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-md font-medium">
                 {active.genre}
               </span>
@@ -232,33 +294,39 @@ export default function FeaturedHero({
             </span>
 
             <span className="bg-white/10 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-md font-medium flex items-center gap-1.5">
-              <Star className="w-3.5 h-3.5 fill-current" />
-              {ratingText}
+              <Heart className="w-3.5 h-3.5 fill-current" />
+              {formatViews(active.likes || 0)}
             </span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl lg:text-5xl text-white font-semibold tracking-tight mb-3 text-balance pointer-events-auto">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl text-white font-semibold tracking-tight mb-3 pointer-events-auto line-clamp-1">
             {active.title}
           </h1>
 
           <p className="text-neutral-200 text-sm sm:text-base line-clamp-2 mb-6 max-w-2xl font-light pointer-events-auto">
-            {active.description}
+            {stripHtml(active.synopsis || "")}
           </p>
 
           <div className="flex items-center gap-3 pointer-events-auto">
             <Link
-              href={`/comic/${active.slug}`}
+              href={readButtonHref}
               className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2 shadow-md shadow-orange-500/30">
               <Play className="w-[18px] h-[18px]" strokeWidth={1.5} />
-              อ่านตอนแรก
+              {readButtonText}
             </Link>
 
-            <button
-              type="button"
-              aria-label="Bookmark"
-              className="bg-white/10 hover:bg-white/20 text-white backdrop-blur-sm p-2.5 rounded-full transition-colors">
-              <Bookmark className="w-5 h-5" strokeWidth={1.5} />
-            </button>
+            {/* Author profile - show for all items */}
+            <Link
+              href={`/profile/${active.creatorUsername || active.creatorId || active.translator || "unknown"}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm px-3 py-2 rounded-full transition-colors"
+            >
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-[10px] font-medium">
+                {(active.translator || "A").charAt(0).toUpperCase()}
+              </div>
+              <span className="text-white text-sm font-medium">{active.translator || "นักเขียน"}</span>
+            </Link>
           </div>
         </div>
 

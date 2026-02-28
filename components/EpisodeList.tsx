@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { ChevronDown, BookOpen } from "lucide-react";
 import type { Episode } from "@/lib/mock/contentData";
@@ -23,6 +23,8 @@ interface EpisodeListProps {
   mangaTitle?: string;
   /** Manga creator ID */
   mangaCreatorId?: number | null;
+  /** Manga ID for optimized reading history fetch */
+  mangaId?: number;
   /** Purchased chapter IDs */
   purchasedChapterIds?: Set<number>;
 }
@@ -36,31 +38,65 @@ export default function EpisodeList({
   currentChapterId,
   mangaTitle = "",
   mangaCreatorId,
+  mangaId,
   purchasedChapterIds = new Set(),
 }: EpisodeListProps) {
   // เก็บสถานะเปิด/ปิดของแต่ละกลุ่ม (index ของกลุ่ม -> true/false)
   const [openGroups, setOpenGroups] = useState<Record<number, boolean>>({});
   const [sortMode, setSortMode] = useState<EpisodeSortMode>("oldest");
+  const [readChapterIds, setReadChapterIds] = useState<Set<number>>(new Set());
+  const [optimizedCurrentChapterId, setOptimizedCurrentChapterId] = useState<number | null>(null);
 
-  // หาตอนที่อ่านแล้ว (ตอนที่มี number น้อยกว่าหรือเท่ากับตอนที่กำลังอ่านอยู่ เมื่อเรียงตาม number)
-  const readChapterIds = useMemo(() => {
+  // Fetch optimized reading history for this manga
+  useEffect(() => {
+    if (!mangaId) return;
+
+    const fetchReadChapters = async () => {
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem("session_token") : null;
+        if (!token) return;
+
+        const response = await fetch(`/api/reading-history?mangaId=${mangaId}`, {
+          headers: {
+            "x-session-token": token,
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setReadChapterIds(new Set(data.readChapterIds || []));
+          setOptimizedCurrentChapterId(data.currentChapterId);
+        }
+      } catch (error) {
+        console.error("Failed to fetch read chapters:", error);
+      }
+    };
+
+    fetchReadChapters();
+  }, [mangaId]);
+
+  // Fallback to old logic if no mangaId or API fails
+  const finalReadChapterIds = useMemo(() => {
+    if (readChapterIds.size > 0) return readChapterIds;
+    
+    // Old logic as fallback
     if (!currentChapterId || !readingHistory) return new Set<number>();
     
     const currentChapter = episodes.find((ep) => parseInt(ep.id) === currentChapterId);
     if (!currentChapter) return new Set<number>();
     
-    // เรียงตอนตาม number จากน้อยไปมาก
     const sortedEpisodes = [...episodes].sort((a, b) => a.number - b.number);
     const currentIndex = sortedEpisodes.findIndex((ep) => ep.id === currentChapter.id);
     
-    // ตอนที่อ่านแล้วคือตอนที่มี number น้อยกว่าหรือเท่ากับตอนที่กำลังอ่านอยู่
     const readIds = new Set<number>();
     for (let i = 0; i <= currentIndex; i++) {
       readIds.add(parseInt(sortedEpisodes[i].id));
     }
     
     return readIds;
-  }, [episodes, currentChapterId, readingHistory]);
+  }, [readChapterIds, currentChapterId, readingHistory, episodes]);
+
+  const finalCurrentChapterId = optimizedCurrentChapterId || currentChapterId;
 
   const toggleGroup = (groupIndex: number) => {
     setOpenGroups((prev) => {
@@ -76,8 +112,8 @@ export default function EpisodeList({
   const renderEpisode = (ep: Episode) => {
     const href = getEpisodeHref ? getEpisodeHref(ep.id) : undefined;
     const episodeId = parseInt(ep.id);
-    const isRead = readChapterIds.has(episodeId);
-    const isCurrent = currentChapterId === episodeId;
+    const isRead = finalReadChapterIds.has(episodeId);
+    const isCurrent = finalCurrentChapterId === episodeId;
     // จางลงถ้าอ่านแล้ว แต่ไม่จางถ้าเป็นตอนที่กำลังอ่านอยู่
     const opacityClass = isRead && !isCurrent ? "opacity-60" : "";
     

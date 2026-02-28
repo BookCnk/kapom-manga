@@ -44,10 +44,27 @@ export function RichTextEditor({
   const [mode, setMode] = useState<"visual" | "source">("visual");
   const [showColorPanel, setShowColorPanel] = useState(false);
   const [showSizePanel, setShowSizePanel] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
   const [fontSizePx, setFontSizePx] = useState(16);
   const [customColor, setCustomColor] = useState("#ffffff");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [hoveredHref, setHoveredHref] = useState<string | null>(null);
+  const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
   const colorPanelRef = useRef<HTMLDivElement | null>(null);
   const sizePanelRef = useRef<HTMLDivElement | null>(null);
+  const savedSelectionRef = useRef<Range | null>(null);
+
+  const fontSizeOptions = [
+    { label: "เล็กมาก", size: 12 },
+    { label: "เล็ก", size: 14 },
+    { label: "ปกติ", size: 16 },
+    { label: "ใหญ่", size: 18 },
+    { label: "ใหญ่มาก", size: 22 },
+  ];
+
+  const currentFontSizeLabel =
+    fontSizeOptions.find((opt) => opt.size === fontSizePx)?.label || "กำหนด";
 
   // sync external value -> editor
   useEffect(() => {
@@ -91,6 +108,105 @@ export function RichTextEditor({
     document.execCommand(command, false, arg);
     const html = editorRef.current.innerHTML;
     onChange(html);
+  };
+
+  const saveSelection = () => {
+    if (typeof window === "undefined") return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      savedSelectionRef.current = null;
+      return;
+    }
+    savedSelectionRef.current = selection.getRangeAt(0).cloneRange();
+  };
+
+  const restoreSelection = () => {
+    if (typeof window === "undefined") return;
+    const range = savedSelectionRef.current;
+    if (!range) return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+
+  const normalizeUrl = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return "";
+    if (/^(https?:\/\/|mailto:|tel:)/i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+  };
+
+  const openLinkModal = () => {
+    if (mode !== "visual") return;
+    setLinkError(null);
+    saveSelection();
+    setShowLinkModal(true);
+  };
+
+  const closeLinkModal = () => {
+    setShowLinkModal(false);
+    setLinkError(null);
+  };
+
+  const applyLink = () => {
+    if (!editorRef.current || mode !== "visual") return;
+    const url = normalizeUrl(linkUrl);
+    if (!url) {
+      setLinkError("กรุณาใส่ลิงก์ (URL)");
+      return;
+    }
+
+    editorRef.current.focus();
+    restoreSelection();
+
+    const selection = window.getSelection();
+    const isCollapsed = !selection || selection.rangeCount === 0 || selection.getRangeAt(0).collapsed;
+
+    if (isCollapsed) {
+      document.execCommand(
+        "insertHTML",
+        false,
+        `<a href=\"${url}\" target=\"_blank\" rel=\"noopener noreferrer\">${url}</a>`,
+      );
+    } else {
+      document.execCommand("createLink", false, url);
+    }
+
+    const html = editorRef.current.innerHTML;
+    onChange(html);
+    closeLinkModal();
+  };
+
+  const handleEditorMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (mode !== "visual") return;
+    const target = e.target as HTMLElement | null;
+    const a = target?.closest?.("a") as HTMLAnchorElement | null;
+    if (a && editorRef.current?.contains(a)) {
+      const href = a.getAttribute("href");
+      if (href) {
+        setHoveredHref(href);
+        setHoveredPos({ x: e.clientX, y: e.clientY });
+        return;
+      }
+    }
+    if (hoveredHref) setHoveredHref(null);
+    if (hoveredPos) setHoveredPos(null);
+  };
+
+  const clearHoveredLink = () => {
+    if (hoveredHref) setHoveredHref(null);
+    if (hoveredPos) setHoveredPos(null);
+  };
+
+  const removeLink = () => {
+    if (!editorRef.current || mode !== "visual") return;
+    editorRef.current.focus();
+    restoreSelection();
+    document.execCommand("unlink");
+    const html = editorRef.current.innerHTML;
+    onChange(html);
+    closeLinkModal();
   };
 
   const handleInput = () => {
@@ -149,7 +265,15 @@ export function RichTextEditor({
     try {
       const span = document.createElement("span");
       span.style.fontSize = `${px}px`;
-      range.surroundContents(span);
+      const contents = range.extractContents();
+      span.appendChild(contents);
+      range.insertNode(span);
+
+      const nextRange = document.createRange();
+      nextRange.selectNodeContents(span);
+      nextRange.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(nextRange);
       setFontSizePx(px);
       const html = editorRef.current.innerHTML;
       onChange(html);
@@ -304,7 +428,7 @@ export function RichTextEditor({
             onClick={() => setShowSizePanel((open) => !open)}
           >
             <span className="text-[11px]">T</span>
-            <span className="text-[11px]">{fontSizePx}px</span>
+            <span className="text-[11px]">{currentFontSizeLabel}</span>
           </button>
 
           {showSizePanel && (
@@ -313,13 +437,7 @@ export function RichTextEditor({
                 ขนาดตัวอักษร
               </p>
               <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
-                {[
-                  { label: "เล็กมาก", size: 12 },
-                  { label: "เล็ก", size: 14 },
-                  { label: "ปกติ", size: 16 },
-                  { label: "ใหญ่", size: 18 },
-                  { label: "ใหญ่มาก", size: 22 },
-                ].map((opt) => (
+                {fontSizeOptions.map((opt) => (
                   <button
                     key={opt.label}
                     type="button"
@@ -340,6 +458,7 @@ export function RichTextEditor({
                 className="w-full px-2 py-1 rounded-md border border-border text-xs text-foreground hover:bg-muted"
                 onClick={() => {
                   setFontSizePx(16);
+                  applyFontSize(16);
                   setShowSizePanel(false);
                 }}
               >
@@ -355,8 +474,7 @@ export function RichTextEditor({
           type="button"
           className={buttonClass}
           onClick={() => {
-            const url = prompt("ใส่ลิงก์ (URL):");
-            if (url) applyCommand("createLink", url);
+            openLinkModal();
           }}
         >
           <LinkIcon className="w-3 h-3" />
@@ -401,10 +519,12 @@ export function RichTextEditor({
           ref={editorRef}
           className={cn(
             "min-h-[180px] px-4 py-3 text-sm leading-relaxed outline-none",
-            "prose prose-invert max-w-none",
+            "prose prose-invert max-w-none writer-description",
           )}
           contentEditable
           onInput={handleInput}
+          onMouseMove={handleEditorMouseMove}
+          onMouseLeave={clearHoveredLink}
           data-placeholder={placeholder}
           suppressContentEditableWarning
         />
@@ -421,6 +541,86 @@ export function RichTextEditor({
       <div className="px-4 py-1 text-xs text-muted-foreground text-right">
         {currentLength}/{maxLength}
       </div>
+
+      {showLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={closeLinkModal}
+          />
+          <div className="relative w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">
+            <div className="px-5 py-4 border-b border-border">
+              <p className="text-sm font-semibold text-foreground">ใส่ลิงก์ (URL)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                วางลิงก์แล้วกด “เพิ่มลิงก์”
+              </p>
+            </div>
+
+            <div className="px-5 py-4">
+              <input
+                autoFocus
+                type="text"
+                value={linkUrl}
+                onChange={(e) => {
+                  setLinkError(null);
+                  setLinkUrl(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyLink();
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeLinkModal();
+                  }
+                }}
+                className={cn(
+                  "w-full px-3 py-2.5 rounded-lg bg-background border border-border",
+                  "text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50",
+                )}
+                placeholder="https://example.com"
+              />
+              {linkError && (
+                <p className="mt-1 text-xs text-red-500">{linkError}</p>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={removeLink}
+                className="px-3 py-2 rounded-lg border border-border text-sm text-foreground hover:bg-muted"
+              >
+                เอาลิงก์ออก
+              </button>
+              <button
+                type="button"
+                onClick={closeLinkModal}
+                className="px-3 py-2 rounded-lg border border-border text-sm text-foreground hover:bg-muted"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={applyLink}
+                className="px-3 py-2 rounded-lg bg-orange-500 text-white text-sm hover:bg-orange-600"
+              >
+                เพิ่มลิงก์
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mode === "visual" && hoveredHref && hoveredPos && (
+        <div
+          className="fixed z-50 px-2.5 py-1.5 rounded-lg border border-border bg-popover text-xs text-foreground shadow-lg pointer-events-none"
+          style={{ left: hoveredPos.x + 12, top: hoveredPos.y + 12, maxWidth: 360 }}
+        >
+          {hoveredHref}
+        </div>
+      )}
     </div>
   );
 }

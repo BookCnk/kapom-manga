@@ -27,6 +27,7 @@ const createMangaSchema = z.object({
   // จำกัดชื่อเรื่องต้นฉบับสูงสุด 120 ตัวอักษร
   originalTitle: z.string().trim().max(120).optional(),
   description: z.string().trim().max(5000).optional(),
+  synopsis: z.string().trim().max(300).optional(),
   coverUrl: z
     .union([z.string().url(), z.literal("")])
     .optional()
@@ -66,28 +67,38 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10", 10);
 
     // Build where clause
-    const where: any = {};
+    const whereBase: any = {};
 
     if (visibility && visibility in Visibility) {
-      where.visibility = visibility;
+      whereBase.visibility = visibility;
     }
     if (status && status in MangaStatus) {
-      where.status = status;
+      whereBase.status = status;
     }
     if (creatorId && Number.isInteger(creatorId) && creatorId > 0) {
-      where.creatorId = creatorId;
-    }
-    if (isMature !== undefined) {
-      where.isMature = isMature;
-    }
-
-    // Add search filter
-    if (search) {
-      where.OR = [
-        { title: { contains: search } },
-        { description: { contains: search } },
+      // Support legacy rows where creatorId was not set (NULL)
+      // This prevents writer dashboard from showing empty results when older records exist.
+      whereBase.OR = [
+        { creatorId: creatorId },
+        { creatorId: null },
       ];
     }
+    if (isMature !== undefined) {
+      whereBase.isMature = isMature;
+    }
+
+    const buildWhere = (includeSynopsis: boolean) => {
+      const where: any = { ...whereBase };
+      if (search) {
+        const searchOr = [
+          { title: { contains: search } },
+          { description: { contains: search } },
+          ...(includeSynopsis ? [{ synopsis: { contains: search } }] : []),
+        ];
+        where.OR = where.OR ? [...where.OR, ...searchOr] : searchOr;
+      }
+      return where;
+    };
 
     // Add genre filter (using genreSlugs JSON field)
     if (genreId && Number.isInteger(genreId) && genreId > 0) {
@@ -95,20 +106,13 @@ export async function GET(request: NextRequest) {
       // For now, we'll skip genre filtering in the query and filter in memory
     }
 
-    // Get total count for pagination
-    const total = await prisma.manga.count({ where });
-
-    // Get mangas with pagination
-    const mangas = await prisma.manga.findMany({
-      where,
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { createdAt: "desc" },
-      select: {
+    const buildSelect = (includeSynopsis: boolean) => {
+      return {
         id: true,
         slug: true,
         title: true,
         description: true,
+        ...(includeSynopsis ? { synopsis: true } : {}),
         coverUrl: true,
         status: true,
         visibility: true,
@@ -133,8 +137,43 @@ export async function GET(request: NextRequest) {
             comments: true,
           },
         },
-      },
-    });
+      };
+    };
+
+    const shouldRetryWithoutSynopsis = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      return msg.toLowerCase().includes("synopsis");
+    };
+
+    let includeSynopsis = true;
+    let where = buildWhere(includeSynopsis);
+    let total: number;
+    let mangas: any[];
+
+    try {
+      total = await prisma.manga.count({ where } as any);
+      mangas = await prisma.manga.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        select: buildSelect(includeSynopsis),
+      } as any);
+    } catch (err) {
+      if (!shouldRetryWithoutSynopsis(err)) {
+        throw err;
+      }
+      includeSynopsis = false;
+      where = buildWhere(includeSynopsis);
+      total = await prisma.manga.count({ where } as any);
+      mangas = await prisma.manga.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        select: buildSelect(includeSynopsis),
+      } as any);
+    }
 
     // Filter by genre if specified (in-memory filtering for JSON field)
     let filteredMangas = mangas;
@@ -270,6 +309,7 @@ export async function POST(request: NextRequest) {
           title: body.title,
           originalTitle: body.originalTitle || null,
           description: body.description || null,
+          synopsis: body.synopsis || null,
           coverUrl: body.coverUrl || null,
           bannerUrl: body.bannerUrl || null,
           status: body.status,
@@ -279,8 +319,8 @@ export async function POST(request: NextRequest) {
           genreSlugs: genreSlugs,
           tagSlugs: tagSlugs,
           creatorId: actor.id,
-        },
-      });
+        } as any,
+      } as any);
 
       return newManga;
     });

@@ -44,6 +44,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         title: true,
         originalTitle: true,
         description: true,
+        synopsis: true,
         coverUrl: true,
         bannerUrl: true,
         status: true,
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest, { params }: Params) {
           },
         },
       },
-    });
+    } as any);
 
     if (!manga) {
       console.log(`[API] Manga not found with slug: ${slug}`);

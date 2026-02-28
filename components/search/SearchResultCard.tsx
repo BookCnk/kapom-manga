@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { BookOpen, Eye, CameraOff } from "lucide-react";
+import { BookOpen, Eye, CameraOff, MessageCircle } from "lucide-react";
 import type { MangaCard } from "@/lib/mock/homeData";
 
 type Props = {
@@ -76,7 +76,7 @@ export default function SearchResultCard({ item }: Props) {
       {/* แถวบน: รูป + ข้อมูลเรื่อง */}
       <div className="flex gap-4 sm:gap-5 items-start">
         <div
-          className="w-28 h-36 sm:w-32 sm:h-44 flex-shrink-0 overflow-hidden bg-muted cursor-pointer rounded-lg"
+          className="w-28 h-36 sm:w-32 sm:h-44 flex-shrink-0 overflow-hidden bg-muted cursor-pointer rounded-lg relative group/cover"
           onClick={handleCardClick}
         >
           {hasImageError || !item.coverImage ? (
@@ -93,38 +93,70 @@ export default function SearchResultCard({ item }: Props) {
               src={item.coverImage}
               alt={item.title}
               loading="lazy"
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover/cover:scale-105"
               onError={() => setHasImageError(true)}
             />
           )}
+          {/* Hover overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover/cover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+          {/* Read button on cover hover */}
+          <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 opacity-0 group-hover/cover:opacity-100 transition-opacity duration-300 pointer-events-none">
+            <div className="bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg whitespace-nowrap">
+              อ่านเลย
+            </div>
+          </div>
         </div>
         <div className="flex-1 min-w-0 space-y-2.5">
           {/* ชื่อเรื่อง (กดเข้าอ่านได้) - จำกัด 1 บรรทัดบนสุด ถ้ายาวเกินใช้ ... */}
-          <h2 className="text-base sm:text-lg font-semibold text-foreground leading-snug">
+          <div className="relative group/title flex items-center gap-2">
             <button
               type="button"
               onClick={handleCardClick}
-              className="block w-full text-left hover:text-orange-400 transition-colors truncate"
+              className="block flex-1 text-left hover:text-orange-400 transition-colors truncate"
             >
               {item.title}
             </button>
-          </h2>
+            {/* "จบ" badge for completed manga */}
+            {item.isCompleted && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-600 border border-green-500/20 flex-shrink-0">
+                จบ
+              </span>
+            )}
+            {/* Read button on title hover */}
+            <div className="absolute -top-1 -right-2 opacity-0 group/title-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+              <div className="bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg whitespace-nowrap">
+                อ่านเลย
+              </div>
+            </div>
+          </div>
 
           {/* Author + หมวดหมู่หลัก (ไม่เกิน 2) */}
           {(primaryCreator || categoryNames.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
               {primaryCreator && (
-                creatorUsername ? (
+                <div className="flex items-center gap-2">
+                  {/* Creator avatar */}
                   <button
                     type="button"
                     onClick={handleCreatorClick}
-                    className="hover:text-orange-400 transition-colors cursor-pointer"
+                    className="w-5 h-5 rounded-full bg-muted border border-border overflow-hidden flex-shrink-0 hover:ring-2 hover:ring-orange-500/50 transition-all cursor-pointer"
                   >
-                    {primaryCreator}
+                    <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-[10px] font-medium">
+                      {primaryCreator.charAt(0).toUpperCase()}
+                    </div>
                   </button>
-                ) : (
-                  <span>{primaryCreator}</span>
-                )
+                  {creatorUsername ? (
+                    <button
+                      type="button"
+                      onClick={handleCreatorClick}
+                      className="hover:text-orange-400 transition-colors cursor-pointer"
+                    >
+                      {primaryCreator}
+                    </button>
+                  ) : (
+                    <span>{primaryCreator}</span>
+                  )}
+                </div>
               )}
               {secondaryCreator && (
                 <>
@@ -140,7 +172,7 @@ export default function SearchResultCard({ item }: Props) {
             </div>
           )}
 
-          {/* meta: ตอน + วิว + เวลา อยู่ในกล่องพื้นหลังบาง ๆ ใต้ชื่อเรื่อง */}
+          {/* meta: ตอน + วิว + คอมเม้น + เวลา อยู่ในกล่องพื้นหลังบาง ๆ ใต้ชื่อเรื่อง */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-full bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground border border-border/60 transition-colors group-hover:bg-orange-500/10 group-hover:text-orange-400 group-hover:border-orange-500/60">
             <div className="flex items-center gap-3">
               <span className="inline-flex items-center gap-1">
@@ -150,6 +182,10 @@ export default function SearchResultCard({ item }: Props) {
               <span className="inline-flex items-center gap-1">
                 <Eye className="w-4 h-4" />
                 {formatViews(item.views)}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <MessageCircle className="w-4 h-4" />
+                {item.comments ?? 0}
               </span>
             </div>
 

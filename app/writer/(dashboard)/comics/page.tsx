@@ -57,6 +57,7 @@ function formatNumber(num: number): string {
 
 export default function WriterComicsPage() {
   const { user, loading: authLoading } = useAuth();
+  const [resolvedUserId, setResolvedUserId] = useState<number | null>(null);
   const [mangas, setMangas] = useState<Manga[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,13 +80,46 @@ export default function WriterComicsPage() {
 
   useEffect(() => {
     if (!authLoading) {
+      const token = typeof window !== "undefined" ? localStorage.getItem("session_token") : null;
       if (user?.id) {
+        setResolvedUserId(null);
         fetchMangas();
+        return;
+      }
+
+      if (token) {
+        (async () => {
+          try {
+            const meRes = await fetch("/api/auth/me", {
+              headers: { "x-session-token": token },
+            });
+            const meJson = await meRes.json();
+            const uid = meJson?.data?.user?.id;
+            if (typeof uid === "number" && uid > 0) {
+              setResolvedUserId(uid);
+            } else {
+              setResolvedUserId(null);
+              setLoading(false);
+              toast.error("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่");
+            }
+          } catch (_e) {
+            setResolvedUserId(null);
+            setLoading(false);
+            toast.error("โหลดข้อมูลผู้ใช้ไม่สำเร็จ กรุณาลองใหม่");
+          }
+        })();
       } else {
+        setResolvedUserId(null);
         setLoading(false);
       }
     }
-  }, [authLoading, user, pagination.page, itemsPerPage, search, statusFilter, visibilityFilter, genreFilter, matureFilter]);
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    if (!authLoading && (user?.id || resolvedUserId)) {
+      fetchMangas();
+    }
+  }, [authLoading, user, resolvedUserId, pagination.page, itemsPerPage, search, statusFilter, visibilityFilter, genreFilter, matureFilter]);
 
   const fetchGenres = async () => {
     try {
@@ -100,7 +134,8 @@ export default function WriterComicsPage() {
   };
 
   const fetchMangas = async () => {
-    if (!user?.id) {
+    const creatorId = user?.id ?? resolvedUserId;
+    if (!creatorId) {
       setLoading(false);
       return;
     }
@@ -110,7 +145,7 @@ export default function WriterComicsPage() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: itemsPerPage.toString(),
-        creatorId: user.id.toString(),
+        creatorId: creatorId.toString(),
         ...(search && { search }),
         ...(statusFilter && { status: statusFilter }),
         ...(visibilityFilter && { visibility: visibilityFilter }),
@@ -132,9 +167,14 @@ export default function WriterComicsPage() {
         }
       } else {
         setMangas([]);
+        const errorMessage = data?.error || data?.message;
+        if (errorMessage) {
+          toast.error(errorMessage);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch mangas:", error);
+      toast.error("โหลดรายการการ์ตูนไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
@@ -406,7 +446,7 @@ export default function WriterComicsPage() {
                   <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">สถานะ</th>
                   <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">การเผยแพร่</th>
                   <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[12%]">ยอดขาย</th>
-                  <th className="text-right px-5 py-4 font-medium text-sm text-foreground w-[8%]">จัดการ</th>
+                  <th className="text-left px-5 py-4 font-medium text-sm text-foreground w-[8%]">จัดการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -447,6 +487,10 @@ export default function WriterComicsPage() {
                               <div className="flex items-center gap-1">
                                 <Eye className="w-3.5 h-3.5" />
                                 <span>{formatNumber(manga.views)}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Heart className="w-3.5 h-3.5 fill-current" />
+                                <span>{formatNumber(manga._count.likes)}</span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <Bookmark className="w-3.5 h-3.5" />

@@ -6,8 +6,8 @@ import type { MangaCard } from "@/lib/mock/homeData";
 import LatestUpdatesList from "@/components/home/LatestUpdatesList";
 import FeaturedHero from "@/components/home/FeaturedHero";
 import SectionHeader from "@/components/home/SectionHeader";
-import MangaGrid from "@/components/home/MangaGrid";
 import SidebarRanking from "@/components/home/SidebarRanking";
+import WeeklyTopPager from "@/components/home/WeeklyTopPager";
 
 type HomePageData = {
   featured: MangaCard[];
@@ -91,14 +91,8 @@ export default function Home() {
                   description="การ์ตูนขายดีที่สุดในสัปดาห์นี้"
                   icon={TrendingUp}
                   iconClassName="text-orange-500"
-                  viewAllHref="/bestsellers"
                 />
-                <MangaGrid
-                  items={bestSellers}
-                  variant="scroller"
-                  limit={5}
-                  cardSize="lg"
-                />
+                <WeeklyTopPager items={bestSellers} kind="bestSellers" perPage={6} />
               </section>
               <section>
                 <SectionHeader
@@ -106,14 +100,8 @@ export default function Home() {
                   description="การ์ตูนที่ได้รับความนิยมสูงสุดจากผู้อ่าน"
                   icon={Heart}
                   iconClassName="text-rose-500"
-                  viewAllHref="/most-liked"
                 />
-                <MangaGrid
-                  items={mostLiked}
-                  variant="scroller"
-                  limit={5}
-                  cardSize="lg"
-                />
+                <WeeklyTopPager items={mostLiked} kind="mostLiked" perPage={6} />
               </section>
               <section>
                 <SectionHeader
@@ -121,9 +109,8 @@ export default function Home() {
                   description="การ์ตูนตอนใหม่ที่เพิ่งอัพเดท"
                   icon={Clock}
                   iconClassName="text-orange-500"
-                  viewAllHref="/latest"
                 />
-              <LatestUpdatesList items={latestUpdates} limit={12} />
+                <LatestUpdatesList items={latestUpdates} limit={12} />
               </section>
             </div>
 

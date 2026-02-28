@@ -99,6 +99,7 @@ model Manga {
   title         String
   originalTitle String?
   description   String?
+  synopsis      String?
   coverUrl      String?
   bannerUrl     String?
   status        MangaStatus @default(ONGOING)

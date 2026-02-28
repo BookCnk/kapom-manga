@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import SearchBar from "@/components/home/SearchBar";
 import SearchGenreFilter from "@/components/home/SearchGenreFilter";
+import SearchFilterDropdown from "@/components/home/SearchFilterDropdown";
 import SearchResultCard from "@/components/search/SearchResultCard";
 import type { MangaCard } from "@/lib/mock/homeData";
 import { getGenreBySlug, mainGenres } from "@/lib/config/genres";
@@ -12,6 +13,14 @@ const ITEMS_PER_PAGE = 12;
 
 function normalize(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function getPlainTextFromHtml(html: string): string {
+  if (!html) return "";
+  if (typeof document === "undefined") return html;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return (tmp.innerText || tmp.textContent || "").trim();
 }
 
 function buildSearchText(m: MangaCard): string {
@@ -26,11 +35,14 @@ export default function SearchPageClient() {
   const normalizedQuery = normalize(rawQuery);
   const tokens = normalizedQuery.length ? normalizedQuery.split(" ").filter(Boolean) : [];
   const selectedGenreSlug = (searchParams?.get("genre") ?? "all").toString();
+  const selectedStatus = (searchParams?.get("status") ?? "all").toString();
+  const selectedRating = (searchParams?.get("rating") ?? "all").toString();
+  const selectedSort = (searchParams?.get("sort") ?? "latest").toString();
   
   // Convert slug to genre name for filtering
   const selectedGenre = selectedGenreSlug === "all" 
-    ? "all" 
-    : (getGenreBySlug(selectedGenreSlug)?.name ?? selectedGenreSlug);
+    ? null 
+    : (getGenreBySlug(selectedGenreSlug)?.name ?? null);
 
   const [mangas, setMangas] = useState<MangaCard[]>([]);
   const [genres] = useState(mainGenres); // Use mainGenres from config directly
@@ -73,9 +85,14 @@ export default function SearchPageClient() {
 
         const transformedMangas: MangaCard[] = allMangas.map((manga: any) => {
           // ใช้ genreSlugs (JSON array) แทน genres relation
-          const genreSlugs: string[] = Array.isArray(manga.genreSlugs)
-            ? (manga.genreSlugs as string[])
-            : [];
+          // Handle both array format and comma-separated string format
+          let genreSlugs: string[] = [];
+          if (Array.isArray(manga.genreSlugs)) {
+            genreSlugs = manga.genreSlugs as string[];
+          } else if (typeof manga.genreSlugs === "string") {
+            // Parse comma-separated string: "action,adventure" -> ["action", "adventure"]
+            genreSlugs = manga.genreSlugs.split(",").map((s: string) => s.trim()).filter(Boolean);
+          }
           
           // แปลง slugs เป็นชื่อ genre และเลือกเฉพาะ main genres (type: "main")
           const genreNames = genreSlugs
@@ -121,7 +138,7 @@ export default function SearchPageClient() {
             id: `m-${manga.id}`,
             slug: manga.slug,
             title: manga.title,
-            description: manga.description || "",
+            description: (manga.synopsis as string | null) || "",
             coverImage: manga.coverUrl || "",
             views: manga.views || 0,
             rating: 0,
@@ -130,11 +147,13 @@ export default function SearchPageClient() {
             latestUpdatedLabel,
             updatedAt: updatedAtString,
             isNew: false,
+            isCompleted: manga.status === "COMPLETED", // Show "จบ" badge if completed
             tags: dbTags,
             genre: genreName as any,
             genres: genreNames, // array ของ genre names (สูงสุด 2)
             translator: manga.creator?.name || "RTN Team",
             creatorUsername: manga.creator?.username || (manga.creator?.id ? String(manga.creator.id) : undefined),
+            comments: manga._count?.comments || 0, // Add comments count
           };
         });
 
@@ -153,8 +172,25 @@ export default function SearchPageClient() {
   const results = mangas.filter((m) => {
     const haystack = buildSearchText(m);
     const matchesQuery = tokens.length === 0 ? true : tokens.some((t) => haystack.includes(t));
-    const matchesGenre = !selectedGenre || selectedGenre === "all" ? true : m.genre === selectedGenre;
-    return matchesQuery && matchesGenre;
+    const matchesGenre = !selectedGenre ? true : m.genre === selectedGenre;
+    // TODO: Add status and rating filters when data is available
+    const matchesStatus = selectedStatus === "all" ? true : true; // Placeholder
+    const matchesRating = selectedRating === "all" ? true : true; // Placeholder
+    return matchesQuery && matchesGenre && matchesStatus && matchesRating;
+  });
+
+  // Sort results
+  const sortedResults = [...results].sort((a, b) => {
+    switch (selectedSort) {
+      case "popular":
+        return b.views - a.views; // Most views first
+      case "latest":
+      default:
+        // Handle undefined updatedAt safely
+        const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return dateB - dateA;
+    }
   });
 
   // Lazy load: แสดงผลทีละ ITEMS_PER_PAGE รายการ
@@ -164,20 +200,20 @@ export default function SearchPageClient() {
   // Reset visibleCount เมื่อ results เปลี่ยน (เช่น เปลี่ยนคำค้นหาหรือ genre)
   useEffect(() => {
     setVisibleCount(ITEMS_PER_PAGE);
-  }, [normalizedQuery, selectedGenreSlug]);
+  }, [normalizedQuery, selectedGenreSlug, selectedStatus, selectedRating, selectedSort]);
 
-  const visibleResults = results.slice(0, visibleCount);
-  const hasMore = visibleCount < results.length;
+  const visibleResults = sortedResults.slice(0, visibleCount);
+  const hasMore = visibleCount < sortedResults.length;
 
   // IntersectionObserver: โหลดเพิ่มเมื่อ scroll ถึง sentinel
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
       const target = entries[0];
       if (target.isIntersecting && hasMore) {
-        setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, results.length));
+        setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, sortedResults.length));
       }
     },
-    [hasMore, results.length],
+    [hasMore, sortedResults.length],
   );
 
   useEffect(() => {
@@ -199,20 +235,37 @@ export default function SearchPageClient() {
           <SearchBar initialQuery={rawQuery} className="w-full" autoSearch delayMs={1000} />
         </section>
 
-        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs w-full">
+        <section className="relative grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs w-full z-[100]">
           <SearchGenreFilter genres={genres} currentGenre={selectedGenreSlug} />
-          <button className="w-full flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
-            <span>สถานะ</span>
-            <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>
-          </button>
-          <button className="w-full flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
-            <span>ระดับเนื้อหา (Rating)</span>
-            <span className="text-[11px] text-muted-foreground">ทั้งหมด</span>
-          </button>
-          <button className="w-full flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-left text-muted-foreground hover:border-orange-500/60 hover:text-foreground transition-colors">
-            <span>จัดเรียงตาม</span>
-            <span className="text-[11px] text-muted-foreground">อัปเดตล่าสุด</span>
-          </button>
+          <SearchFilterDropdown
+            label="สถานะ"
+            options={[
+              { value: "all", label: "ทั้งหมด" },
+              { value: "ongoing", label: "ยังไม่จบ" },
+              { value: "completed", label: "จบแล้ว" },
+            ]}
+            currentValue={selectedStatus}
+            paramKey="status"
+          />
+          <SearchFilterDropdown
+            label="ระดับเนื้อหา"
+            options={[
+              { value: "all", label: "ทั้งหมด" },
+              { value: "general", label: "ทั่วไป" },
+              { value: "18+", label: "18+" },
+            ]}
+            currentValue={selectedRating}
+            paramKey="rating"
+          />
+          <SearchFilterDropdown
+            label="จัดเรียงตาม"
+            options={[
+              { value: "latest", label: "อัปเดตล่าสุด" },
+              { value: "popular", label: "ยอดนิยม" },
+            ]}
+            currentValue={selectedSort}
+            paramKey="sort"
+          />
         </section>
 
         <section className="space-y-3 w-full">
@@ -223,7 +276,7 @@ export default function SearchPageClient() {
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                พบ {results.length} เรื่อง
+                พบ {sortedResults.length} เรื่อง
                 {normalizedQuery && (
                   <>
                     {" "}
@@ -246,7 +299,7 @@ export default function SearchPageClient() {
                 </div>
               )}
 
-              {results.length === 0 && !loading && (
+              {sortedResults.length === 0 && !loading && (
                 <div className="text-center py-12 text-muted-foreground">
                   <p>ไม่พบผลลัพธ์</p>
                 </div>

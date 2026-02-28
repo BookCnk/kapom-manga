@@ -92,3 +92,49 @@
   transform-origin: left;
   animation: top-progress 0.6s ease-out forwards;
 }
+
+@keyframes writer-link-glow {
+  0%,
+  100% {
+    text-shadow:
+      0 0 0.15em color-mix(in oklab, currentColor 65%, transparent),
+      0 0 0.55em color-mix(in oklab, currentColor 55%, transparent);
+    filter: brightness(1);
+  }
+  50% {
+    text-shadow:
+      0 0 0.25em color-mix(in oklab, currentColor 75%, transparent),
+      0 0 0.85em color-mix(in oklab, currentColor 65%, transparent),
+      0 0 1.25em color-mix(in oklab, currentColor 45%, transparent);
+    filter: brightness(1.05);
+  }
+}
+
+.writer-description a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 0.35rem;
+  padding: 0.05rem 0.15rem;
+  animation: writer-link-glow 1.6s ease-in-out infinite;
+  transition:
+    background-color 160ms ease,
+    filter 160ms ease;
+}
+
+.writer-description a:hover {
+  background-color: color-mix(in oklab, currentColor 14%, transparent);
+  filter: brightness(1.12);
+}
+
+.writer-description a:focus-visible {
+  outline: 2px solid color-mix(in oklab, currentColor 70%, transparent);
+  outline-offset: 2px;
+  background-color: color-mix(in oklab, currentColor 16%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .writer-description a {
+    animation: none;
+  }
+}

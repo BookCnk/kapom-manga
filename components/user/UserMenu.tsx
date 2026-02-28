@@ -90,7 +90,7 @@ export default function UserMenu() {
     <div className="relative user-menu">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 p-1 rounded-full hover:bg-muted transition-colors border-2 border-purple-500">
+        className="flex items-center gap-2 p-1 rounded-full hover:bg-muted transition-colors border-2 border-orange-500">
         {user.avatarUrl ? (
           <img
             src={user.avatarUrl}
@@ -118,7 +118,7 @@ export default function UserMenu() {
                 <img
                   src={user.avatarUrl}
                   alt={user.name || user.email}
-                  className="w-10 h-10 rounded-full object-cover border-2 border-purple-500"
+                  className="w-10 h-10 rounded-full object-cover border-2 border-orange-500"
                 />
               ) : (
                 <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center text-white text-sm font-medium">
@@ -127,7 +127,7 @@ export default function UserMenu() {
                 </div>
               )}
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-violet-400 truncate">
+                <div className="text-sm font-semibold text-orange-400 truncate">
                   {user.name || "ผู้ใช้ RTN"}
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
@@ -157,7 +157,7 @@ export default function UserMenu() {
               </div>
               <button
                 type="button"
-                className="px-3 py-1.5 rounded-full bg-violet-500 hover:bg-violet-600 text-xs font-medium text-white transition-colors"
+                className="px-3 py-1.5 rounded-full bg-orange-500 hover:bg-orange-600 text-xs font-medium text-white transition-colors"
               >
                 เติมเหรียญ
               </button>

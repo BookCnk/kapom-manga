@@ -10,8 +10,10 @@ import { contentTypeOptions } from "@/lib/config/contentTypes";
 import { RichTextEditor } from "@/components/writer/RichTextEditor";
 import { toast } from "sonner";
 import AuthGuard from "@/components/writer/AuthGuard";
-import * as nsfwjs from "nsfwjs";
 import { checkInappropriateContent } from "@/lib/utils/content-filter";
+import { useAuth } from "@/contexts/AuthContext";
+import * as nsfwjs from "nsfwjs";
+import JSZip from "jszip";
 
 type Genre = {
   id: string; // slug
@@ -19,6 +21,14 @@ type Genre = {
   name: string;
   type: "main" | "sub";
 };
+
+function getPlainTextLengthFromHtml(html: string): number {
+  if (!html) return 0;
+  if (typeof document === "undefined") return html.length;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return (tmp.innerText || tmp.textContent || "").length;
+}
 
 // Generate random slug (e.g., wDmYxyBknVllzl9LqGR5)
 function generateRandomSlug(): string {
@@ -69,6 +79,7 @@ export default function CreateMangaPage() {
   const [titleError, setTitleError] = useState<string | null>(null);
   const [originalTitleError, setOriginalTitleError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const [synopsisError, setSynopsisError] = useState<string | null>(null);
   const [showAgreement, setShowAgreement] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
@@ -90,6 +101,7 @@ export default function CreateMangaPage() {
     slug: string;
     originalTitle: string;
     description: string;
+    synopsis: string;
     coverUrl: string;
     bannerUrl: string;
     status: MangaStatus;
@@ -103,6 +115,7 @@ export default function CreateMangaPage() {
     slug: "",
     originalTitle: "",
     description: "",
+    synopsis: "",
     coverUrl: "",
     bannerUrl: "",
     status: MangaStatus.ONGOING,
@@ -404,6 +417,7 @@ export default function CreateMangaPage() {
     setTitleError(null);
     setOriginalTitleError(null);
     setDescriptionError(null);
+    setSynopsisError(null);
 
     // ตรวจคำต้องห้ามในชื่อเรื่อง
     const titleCheck = checkInappropriateContent(formData.title);
@@ -426,6 +440,29 @@ export default function CreateMangaPage() {
     if (descriptionCheck.isInappropriate) {
       setDescriptionError("ไม่สามารถใช้ได้เนื่องจากคำ 18+");
       toast.error("ไม่สามารถใช้ได้เนื่องจากคำ 18+");
+      return;
+    }
+
+    // ตรวจคำต้องห้ามในเรื่องย่อ (สั้น)
+    const synopsisCheck = checkInappropriateContent(formData.synopsis);
+    if (synopsisCheck.isInappropriate) {
+      setSynopsisError("ไม่สามารถใช้ได้เนื่องจากคำ 18+");
+      toast.error("ไม่สามารถใช้ได้เนื่องจากคำ 18+");
+      return;
+    }
+
+    // จำกัดความยาวเรื่องย่อ (สั้น)
+    if ((formData.synopsis || "").length > 120) {
+      setSynopsisError("จำกัดไม่เกิน 120 คำ");
+      toast.error("จำกัดไม่เกิน 120 คำ");
+      return;
+    }
+
+    // จำกัดความยาวข้อมูลเบื้องต้น / เรื่องย่อ (นับเป็นตัวอักษรจาก plain text)
+    const descriptionPlainLen = getPlainTextLengthFromHtml(formData.description || "");
+    if (descriptionPlainLen > 750) {
+      setDescriptionError("จำกัดไม่เกิน 750 ตัวอักษร");
+      toast.error("จำกัดไม่เกิน 750 ตัวอักษร");
       return;
     }
 
@@ -464,6 +501,7 @@ export default function CreateMangaPage() {
           slug: formData.slug,
           originalTitle: formData.originalTitle || undefined,
           description: formData.description,
+          synopsis: formData.synopsis || undefined,
           coverUrl: formData.coverUrl || undefined,
           bannerUrl: formData.bannerUrl || undefined,
           status: formData.status,
@@ -1035,13 +1073,39 @@ export default function CreateMangaPage() {
               </div>
             </div>
 
-            {/* Description Section */}
+            {/* Synopsis (short) */}
             <div className="bg-card rounded-xl border border-border p-6">
               <label className="block text-sm font-medium text-foreground mb-1">
-                ข้อมูลเบื้องต้น/แนะนำเรื่อง/เรื่องย่อ
+                เรื่องย่อ (สั้น)
               </label>
               <p className="text-xs text-muted-foreground mb-2">
-                จำกัดไม่เกิน 2000 ตัวอักษร
+                ใช้สำหรับหน้า Search (จำกัดไม่เกิน 120 คำ)
+              </p>
+              <textarea
+                value={formData.synopsis}
+                maxLength={120}
+                onChange={(e) => {
+                  setSynopsisError(null);
+                  setFormData((prev) => ({ ...prev, synopsis: e.target.value }));
+                }}
+                className="min-h-[120px] w-full px-4 py-3 text-sm leading-relaxed outline-none bg-background border border-border rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                placeholder="พิมพ์เรื่องย่อแบบสั้น..."
+              />
+              <div className="px-1 py-1 text-xs text-muted-foreground text-right">
+                {(formData.synopsis || "").length}/120
+              </div>
+              {synopsisError && (
+                <p className="mt-1 text-xs text-red-500">{synopsisError}</p>
+              )}
+            </div>
+
+            {/* Description */}
+            <div className="bg-card rounded-xl border border-border p-6">
+              <label className="block text-sm font-medium text-foreground mb-1">
+                แนะนำเรื่อง
+              </label>
+              <p className="text-xs text-muted-foreground mb-2">
+                จำกัดไม่เกิน 750 ตัวอักษร
               </p>
               <RichTextEditor
                 value={formData.description}
@@ -1049,7 +1113,7 @@ export default function CreateMangaPage() {
                   setDescriptionError(null);
                   setFormData((prev) => ({ ...prev, description: html }));
                 }}
-                maxLength={2000}
+                maxLength={750}
                 placeholder="พิมพ์เนื้อหาตรงนี้"
               />
               {descriptionError && (
@@ -1057,96 +1121,102 @@ export default function CreateMangaPage() {
               )}
             </div>
 
-            {/* Tags Section */}
-            <div className="bg-card rounded-xl border border-border p-6">
-              <label className="block text-sm font-medium text-foreground mb-3">
-                แท็ก
-                <span className="text-xs text-muted-foreground ml-2">({tagInput.length}/20)</span>
-              </label>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  maxLength={20}
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={handleTagKeyDown}
-                  className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
-                  placeholder="พิมพ์แท็กของคุณตรงนี้ และกด Enter เพื่อเพิ่มแท็ก"
-                />
-                {tags.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((tag, index) => (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Settings Section */}
+              <div className="bg-card rounded-xl border border-border p-6">
+                <h3 className="text-sm font-medium text-foreground mb-4">ตั้งค่าเรื่อง</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">สถานะเรื่อง</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          visibility: prev.visibility === Visibility.PUBLIC ? Visibility.PRIVATE : Visibility.PUBLIC,
+                        }));
+                      }}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        formData.visibility === Visibility.PUBLIC ? "bg-orange-500" : "bg-muted"
+                      )}
+                    >
                       <span
-                        key={index}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/10 text-orange-600 rounded-full text-sm">
-                        {tag}
-                        <button
-                          type="button"
-                          onClick={() => removeTag(index)}
-                          className="hover:text-orange-700">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          formData.visibility === Visibility.PUBLIC ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                    <span className={cn("text-sm ml-2", formData.visibility === Visibility.PUBLIC ? "text-orange-500" : "text-muted-foreground")}>
+                      {formData.visibility === Visibility.PUBLIC ? "เผยแพร่" : "ไม่เผยแพร่"}
+                    </span>
                   </div>
-                )}
-              </div>
-            </div>
 
-            {/* Settings Section */}
-            <div className="bg-card rounded-xl border border-border p-6">
-              <h3 className="text-sm font-medium text-foreground mb-4">ตั้งค่าเรื่อง</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-foreground">สถานะเรื่อง</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData((prev) => ({
-                        ...prev,
-                        visibility: prev.visibility === Visibility.PUBLIC ? Visibility.PRIVATE : Visibility.PUBLIC,
-                      }));
-                    }}
-                    className={cn(
-                      "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                      formData.visibility === Visibility.PUBLIC ? "bg-orange-500" : "bg-muted"
-                    )}>
-                    <span
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">สถานะจบ</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          status: prev.status === MangaStatus.COMPLETED ? MangaStatus.ONGOING : MangaStatus.COMPLETED,
+                        }));
+                      }}
                       className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                        formData.visibility === Visibility.PUBLIC ? "translate-x-6" : "translate-x-1"
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        formData.status === MangaStatus.COMPLETED ? "bg-orange-500" : "bg-muted"
                       )}
-                    />
-                  </button>
-                  <span className={cn("text-sm ml-2", formData.visibility === Visibility.PUBLIC ? "text-orange-500" : "text-muted-foreground")}>
-                    {formData.visibility === Visibility.PUBLIC ? "เผยแพร่" : "ไม่เผยแพร่"}
-                  </span>
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          formData.status === MangaStatus.COMPLETED ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                    <span className={cn("text-sm ml-2", formData.status === MangaStatus.COMPLETED ? "text-orange-500" : "text-muted-foreground")}>
+                      {formData.status === MangaStatus.COMPLETED ? "จบแล้ว" : "ยังไม่จบ"}
+                    </span>
+                  </div>
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-foreground">สถานะจบ</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData((prev) => ({
-                        ...prev,
-                        status: prev.status === MangaStatus.COMPLETED ? MangaStatus.ONGOING : MangaStatus.COMPLETED,
-                      }));
-                    }}
-                    className={cn(
-                      "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                      formData.status === MangaStatus.COMPLETED ? "bg-orange-500" : "bg-muted"
-                    )}>
-                    <span
-                      className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                        formData.status === MangaStatus.COMPLETED ? "translate-x-6" : "translate-x-1"
-                      )}
-                    />
-                  </button>
-                  <span className={cn("text-sm ml-2", formData.status === MangaStatus.COMPLETED ? "text-orange-500" : "text-muted-foreground")}>
-                    {formData.status === MangaStatus.COMPLETED ? "จบแล้ว" : "ยังไม่จบ"}
-                  </span>
+              {/* Tags Section */}
+              <div className="bg-card rounded-xl border border-border p-6">
+                <label className="block text-sm font-medium text-foreground mb-3">
+                  แท็ก
+                  <span className="text-xs text-muted-foreground ml-2">({tagInput.length}/20)</span>
+                </label>
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    maxLength={20}
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={handleTagKeyDown}
+                    className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                    placeholder="พิมพ์แท็กของคุณตรงนี้ และกด Enter เพื่อเพิ่มแท็ก"
+                  />
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/10 text-orange-600 rounded-full text-sm"
+                        >
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => removeTag(index)}
+                            className="hover:text-orange-700"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1155,7 +1225,8 @@ export default function CreateMangaPage() {
             <div className="flex items-center justify-end gap-4 pb-6">
               <Link
                 href="/writer/comics"
-                className="px-6 py-2.5 border border-border rounded-lg hover:bg-muted transition-colors text-foreground">
+                className="px-6 py-2.5 border border-border rounded-lg hover:bg-muted transition-colors text-foreground"
+              >
                 ยกเลิก
               </Link>
               <button

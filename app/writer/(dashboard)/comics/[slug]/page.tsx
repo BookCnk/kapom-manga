@@ -39,6 +39,14 @@ const THAI_MONTHS_FULL = [
 ];
 const THAI_DAYS_SHORT = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 
+function getPlainTextLengthFromHtml(html: string): number {
+  if (!html) return 0;
+  if (typeof document === "undefined") return html.length;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return (tmp.innerText || tmp.textContent || "").length;
+}
+
 // Dynamically import recharts to avoid SSR issues
 const MonthlySalesChart = dynamic(
   () => import("recharts").then((mod) => {
@@ -259,6 +267,7 @@ export default function EditMangaPage() {
     title: string;
     originalTitle: string;
     description: string;
+    synopsis: string;
     coverUrl: string;
     status: MangaStatus;
     visibility: Visibility;
@@ -270,6 +279,7 @@ export default function EditMangaPage() {
     title: "",
     originalTitle: "",
     description: "",
+    synopsis: "",
     coverUrl: "",
     status: MangaStatus.ONGOING,
     visibility: Visibility.PUBLIC,
@@ -281,6 +291,7 @@ export default function EditMangaPage() {
   const [titleError, setTitleError] = useState<string | null>(null);
   const [originalTitleError, setOriginalTitleError] = useState<string | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const [synopsisError, setSynopsisError] = useState<string | null>(null);
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
@@ -1323,6 +1334,7 @@ export default function EditMangaPage() {
         title: manga.title,
         originalTitle: manga.originalTitle || "",
         description: manga.description || "",
+        synopsis: (manga as any).synopsis || "",
         coverUrl: currentCoverUrl,
         status: manga.status,
         visibility: manga.visibility,
@@ -1530,6 +1542,7 @@ export default function EditMangaPage() {
       setTitleError(null);
       setOriginalTitleError(null);
       setDescriptionError(null);
+      setSynopsisError(null);
 
       // ตรวจคำต้องห้ามในชื่อเรื่อง
       const titleCheck = checkInappropriateContent(formData.title);
@@ -1555,6 +1568,29 @@ export default function EditMangaPage() {
         return;
       }
 
+      // ตรวจคำต้องห้ามในเรื่องย่อ (สั้น)
+      const synopsisCheck = checkInappropriateContent(formData.synopsis);
+      if (synopsisCheck.isInappropriate) {
+        setSynopsisError("ไม่สามารถใช้ได้เนื่องจากคำ 18+");
+        toast.error("ไม่สามารถใช้ได้เนื่องจากคำ 18+");
+        return;
+      }
+
+      // จำกัดความยาวเรื่องย่อ (สั้น)
+      if ((formData.synopsis || "").length > 120) {
+        setSynopsisError("จำกัดไม่เกิน 120 คำ");
+        toast.error("จำกัดไม่เกิน 120 คำ");
+        return;
+      }
+
+      // จำกัดความยาวข้อมูลเบื้องต้น/เรื่องย่อ (นับเป็นตัวอักษรจาก plain text)
+      const descriptionPlainLen = getPlainTextLengthFromHtml(formData.description || "");
+      if (descriptionPlainLen > 750) {
+        setDescriptionError("จำกัดไม่เกิน 750 ตัวอักษร");
+        toast.error("จำกัดไม่เกิน 750 ตัวอักษร");
+        return;
+      }
+
       setLoading(true);
       const sessionToken = localStorage.getItem("session_token") || "";
 
@@ -1568,6 +1604,7 @@ export default function EditMangaPage() {
           title: formData.title,
           originalTitle: formData.originalTitle || null,
           description: formData.description || null,
+          synopsis: formData.synopsis || null,
           coverUrl: formData.coverUrl || null,
           status: formData.status,
           visibility: formData.visibility,
@@ -2593,16 +2630,16 @@ export default function EditMangaPage() {
 
       {/* Tab Content */}
       {activeTab === "info" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3">
               {/* Cover Preview + Upload */}
           <div className="lg:col-span-1">
             <div className="sticky top-6">
-                  <div className="bg-card border border-border rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-3">
+                  <div className="bg-card border border-border rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
                       <h3 className="text-sm font-medium text-foreground">ภาพหน้าปก</h3>
                     </div>
                 <div className={cn(
-                  "aspect-[5/7] bg-muted rounded-lg overflow-hidden mb-3 relative group cursor-pointer border-2 transition-all duration-300",
+                  "aspect-[5/7] bg-muted rounded-lg overflow-hidden mb-2 relative group cursor-pointer border-2 transition-all duration-300",
                   coverError ? "border-red-500 ring-2 ring-red-500/50 shadow-lg shadow-red-500/20" : "border-border"
                 )}>
                   <input
@@ -2671,12 +2708,12 @@ export default function EditMangaPage() {
           <div className="lg:col-span-2">
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Basic Info */}
-              <div className="bg-card border border-border rounded-xl p-4 space-y-4">
-                <h3 className="text-base font-semibold text-foreground mb-2">ข้อมูลพื้นฐาน</h3>
+              <div className="bg-card border border-border rounded-xl p-3 space-y-3">
+                <h3 className="text-sm font-semibold text-foreground mb-1">ข้อมูลพื้นฐาน</h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                       ชื่อเรื่อง <span className="text-red-500">*</span>
                       <span className="text-xs text-muted-foreground ml-2">
                         ({formData.title.length}/120)
@@ -2692,7 +2729,7 @@ export default function EditMangaPage() {
                         setFormData({ ...formData, title: e.target.value });
                       }}
                       className={cn(
-                        "w-full px-4 py-2.5 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
+                        "w-full px-3 py-2 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
                         titleError ? "border-red-500" : "border-border"
                       )}
                       placeholder="ชื่อเรื่อง"
@@ -2702,7 +2739,7 @@ export default function EditMangaPage() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       ชื่อเรื่องต้นฉบับ <span className="text-red-500">*</span>
                       <span className="text-xs text-muted-foreground ml-2">
                         ({formData.originalTitle.length}/120)
@@ -2718,7 +2755,7 @@ export default function EditMangaPage() {
                         setFormData({ ...formData, originalTitle: e.target.value });
                       }}
                       className={cn(
-                        "w-full px-4 py-2.5 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
+                        "w-full px-3 py-2 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20",
                         originalTitleError ? "border-red-500" : "border-border"
                       )}
                       placeholder="ชื่อเรื่องต้นฉบับ"
@@ -2729,9 +2766,9 @@ export default function EditMangaPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div ref={mainGenreDropdownRef}>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       หมวดหมู่หลัก <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -2740,7 +2777,7 @@ export default function EditMangaPage() {
                         onClick={() =>
                           setShowMainGenreDropdown((open) => !open)
                         }
-                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
                       >
                         <span className={cn(
                           "text-sm",
@@ -2865,9 +2902,9 @@ export default function EditMangaPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div ref={ratingDropdownRef}>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       ระดับของเนื้อหา <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -2876,7 +2913,7 @@ export default function EditMangaPage() {
                         onClick={() =>
                           setShowRatingDropdown((open) => !open)
                         }
-                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                       >
                         <span className="text-sm text-foreground">
                           {formData.isMature ? "18+" : "ทั่วไป"}
@@ -2923,7 +2960,7 @@ export default function EditMangaPage() {
                     </div>
                   </div>
                   <div ref={contentTypeDropdownRef}>
-                    <label className="block text-sm font-medium text-foreground mb-2">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       ประเภทเนื้อหา <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -2932,7 +2969,7 @@ export default function EditMangaPage() {
                         onClick={() =>
                           setShowContentTypeDropdown((open) => !open)
                         }
-                        className="w-full px-4 py-2.5 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                       >
                         <div className="flex items-center gap-2">
                           {(() => {
@@ -3011,111 +3048,148 @@ export default function EditMangaPage() {
                 </div>
               </div>
 
-              {/* Description */}
-              <div className="bg-card border border-border rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-1">
-                  ข้อมูลเบื้องต้น/แนะนำเรื่อง/เรื่องย่อ
-                </h3>
-                <p className="text-xs text-muted-foreground mb-2">
-                  จำกัดไม่เกิน 2000 ตัวอักษร
-                </p>
-                <RichTextEditor
-                  value={formData.description}
-                  onChange={(html) => {
-                    setDescriptionError(null);
-                    setFormData((prev) => ({ ...prev, description: html }));
-                  }}
-                  maxLength={2000}
-                  placeholder="พิมพ์เนื้อหาตรงนี้"
-                />
-                {descriptionError && (
-                  <p className="mt-1 text-xs text-red-500">{descriptionError}</p>
-                )}
-              </div>
-
-              {/* Tags */}
-              <div className="bg-card border border-border rounded-xl p-6">
-                <label className="block text-sm font-medium text-foreground mb-3">
-                  แท็ก
-                  <span className="text-xs text-muted-foreground ml-2">({tagInput.length}/20)</span>
-                </label>
-                <div className="space-y-3">
-                  <input
-                    type="text"
-                    maxLength={20}
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={handleTagKeyDown}
-                    className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
-                    placeholder="พิมพ์แท็กของคุณตรงนี้ และกด Enter เพื่อเพิ่มแท็ก"
+              {/* Synopsis + Description */}
+              <div className="space-y-4">
+                {/* Synopsis (short) */}
+                <div className="bg-card border border-border rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">
+                    เรื่องย่อ (สั้น)
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    ใช้สำหรับหน้า Search (จำกัดไม่เกิน 120 คำ)
+                  </p>
+                  <textarea
+                    value={formData.synopsis}
+                    maxLength={120}
+                    onChange={(e) => {
+                      setSynopsisError(null);
+                      setFormData((prev) => ({ ...prev, synopsis: e.target.value }));
+                    }}
+                    className="min-h-[100px] w-full px-3 py-2 text-sm leading-relaxed outline-none bg-background border border-border rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                    placeholder="พิมพ์เรื่องย่อแบบสั้น..."
                   />
-                  {tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/10 text-orange-600 rounded-full text-sm">
-                          {tag}
-                          <button
-                            type="button"
-                            onClick={() => removeTag(index)}
-                            className="hover:text-orange-700">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
+                  <div className="px-1 py-1 text-xs text-muted-foreground text-right">
+                    {(formData.synopsis || "").length}/120
+                  </div>
+                  {synopsisError && (
+                    <p className="mt-1 text-xs text-red-500">{synopsisError}</p>
+                  )}
+                </div>
+
+                {/* Description */}
+                <div className="bg-card border border-border rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">
+                    แนะนำเรื่อง
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    จำกัดไม่เกิน 750 ตัวอักษร
+                  </p>
+                  <RichTextEditor
+                    value={formData.description}
+                    onChange={(html) => {
+                      setDescriptionError(null);
+                      setFormData((prev) => ({ ...prev, description: html }));
+                    }}
+                    maxLength={750}
+                    placeholder="พิมพ์เนื้อหาตรงนี้"
+                  />
+                  {descriptionError && (
+                    <p className="mt-1 text-xs text-red-500">{descriptionError}</p>
                   )}
                 </div>
               </div>
 
-              {/* Settings */}
-              <div className="bg-card border border-border rounded-xl p-4">
-                <h3 className="text-base font-semibold text-foreground mb-3">ตั้งค่าเรื่อง</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-foreground text-sm">สถานะเรื่อง</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formData.visibility === Visibility.PUBLIC ? "เผยแพร่" : "ไม่เผยแพร่"}
-                      </p>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Settings */}
+                <div className="bg-card border border-border rounded-xl p-4">
+                  <h3 className="text-base font-semibold text-foreground mb-3">ตั้งค่าเรื่อง</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-foreground text-sm">สถานะเรื่อง</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formData.visibility === Visibility.PUBLIC ? "เผยแพร่" : "ไม่เผยแพร่"}
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.visibility === Visibility.PUBLIC}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              visibility: e.target.checked
+                                ? Visibility.PUBLIC
+                                : Visibility.PRIVATE,
+                            })
+                          }
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                      </label>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.visibility === Visibility.PUBLIC}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            visibility: e.target.checked ? Visibility.PUBLIC : Visibility.PRIVATE,
-                          })
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-foreground text-sm">สถานะจบ</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formData.status === MangaStatus.COMPLETED ? "จบแล้ว" : "ยังไม่จบ"}
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.status === MangaStatus.COMPLETED}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              status: e.target.checked
+                                ? MangaStatus.COMPLETED
+                                : MangaStatus.ONGOING,
+                            })
+                          }
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                      </label>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-foreground text-sm">สถานะจบ</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formData.status === MangaStatus.COMPLETED ? "จบแล้ว" : "ยังไม่จบ"}
-                      </p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.status === MangaStatus.COMPLETED}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            status: e.target.checked ? MangaStatus.COMPLETED : MangaStatus.ONGOING,
-                          })
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-500/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
-                    </label>
+                </div>
+
+                {/* Tags */}
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <label className="block text-sm font-medium text-foreground mb-3">
+                    แท็ก
+                    <span className="text-xs text-muted-foreground ml-2">({tagInput.length}/20)</span>
+                  </label>
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      maxLength={20}
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={handleTagKeyDown}
+                      className="w-full px-4 py-2.5 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50"
+                      placeholder="พิมพ์แท็กของคุณตรงนี้ และกด Enter เพื่อเพิ่มแท็ก"
+                    />
+                    {tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {tags.map((tag, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-500/10 text-orange-600 rounded-full text-sm"
+                          >
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => removeTag(index)}
+                              className="hover:text-orange-700"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

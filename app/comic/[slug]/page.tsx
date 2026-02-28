@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, Info, List, BookOpen, Heart, Eye, Bookmark } from "lucide-react";
+import { Plus, Info, List, BookOpen, Heart, Eye, Bookmark, MessageCircle } from "lucide-react";
 import Breadcrumb from "@/components/Breadcrumb";
 import EpisodeList from "@/components/EpisodeList";
 import ReviewsSection from "@/components/ReviewsSection";
@@ -91,6 +91,8 @@ export default function ComicPage() {
   const [error, setError] = useState<string | null>(null);
   const [readingHistory, setReadingHistory] = useState<{ chapterId: number; lastPage: number } | null>(null);
   const [purchasedChapterIds, setPurchasedChapterIds] = useState<Set<number>>(new Set());
+  const [isLiked, setIsLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(0);
 
   useEffect(() => {
     const fetchManga = async () => {
@@ -163,6 +165,37 @@ export default function ComicPage() {
     }
   }, [slug]);
 
+  // Initialize likes state from manga data
+  useEffect(() => {
+    if (manga) {
+      setLikesCount(manga._count?.likes || 0);
+      
+      // Check if current user already liked this manga
+      const checkLikeStatus = async () => {
+        try {
+          const token = typeof window !== "undefined" ? localStorage.getItem("session_token") : null;
+          if (!token) return;
+          
+          const response = await fetch(`/api/manga/${manga.id}/like`, {
+            method: "GET",
+            headers: {
+              "x-session-token": token,
+            },
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            setIsLiked(data.liked);
+          }
+        } catch (err) {
+          console.error("Failed to check like status:", err);
+        }
+      };
+      
+      checkLikeStatus();
+    }
+  }, [manga]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -192,6 +225,32 @@ export default function ComicPage() {
   const lastUpdatedText = lastChapter?.publishedAt
     ? format(new Date(lastChapter.publishedAt), "d MMM yyyy HH:mm น.", { locale: th })
     : undefined;
+
+  const handleLikeToggle = async () => {
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("session_token") : null;
+      if (!token) {
+        alert("กรุณาเข้าสู่ระบบก่อนกดชื่นชอบ");
+        return;
+      }
+
+      const response = await fetch(`/api/manga/${manga.id}/like`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-session-token": token,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIsLiked(data.liked);
+        setLikesCount(data.likesCount);
+      }
+    } catch (err) {
+      console.error("Failed to toggle like:", err);
+    }
+  };
 
   // Convert chapters to episodes format for EpisodeList component
   // Create a map from chapter id to chapter slug for href generation
@@ -272,7 +331,7 @@ export default function ComicPage() {
                 {/* Title */}
                 <div className="text-center mb-2 min-h-[40px] flex items-center justify-center">
                   {manga ? (
-                    <h1 className="text-2xl font-semibold text-foreground line-clamp-2 break-words px-2">
+                    <h1 className="text-2xl font-semibold text-foreground line-clamp-1 break-words px-2">
                       {manga.title}
                     </h1>
                   ) : (
@@ -323,8 +382,8 @@ export default function ComicPage() {
                     <span className="text-foreground font-semibold text-lg">{formatViews(manga.views)}</span>
                   </span>
                   <span className="flex items-center gap-2">
-                    <Heart className="w-5 h-5 text-muted-foreground" />
-                    <span className="text-foreground font-semibold text-lg">{manga.likesCount || manga._count?.likes || 0}</span>
+                    <Heart className="w-5 h-5 text-muted-foreground fill-current" />
+                    <span className="text-foreground font-semibold text-lg">{likesCount}</span>
                   </span>
                 </div>
 
@@ -335,18 +394,24 @@ export default function ComicPage() {
                 <button
                   onClick={handleStartReading}
                   disabled={!continueChapter}
-                  className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
+                  className="w-full px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 shadow-md shadow-orange-500/30">
                   <span>{buttonText}</span>
                   <BookOpen className="w-4 h-4" />
                 </button>
 
                 {/* Action Buttons */}
                 <div className="flex items-center justify-center gap-2">
-                  <button className="flex-1 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-foreground flex items-center justify-center gap-2 transition-colors text-sm">
-                    <Heart className="w-4 h-4" />
-                    ชื่นชอบ
+                  <button 
+                    onClick={handleLikeToggle}
+                    className={`flex-1 px-3 py-2 rounded-lg flex items-center justify-center gap-2 transition-all text-sm ${
+                      isLiked 
+                        ? "bg-orange-500 text-white shadow-md shadow-orange-500/30" 
+                        : "bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 text-orange-500"
+                    }`}>
+                    <Heart className={`w-4 h-4 ${isLiked ? "fill-current" : ""}`} />
+                    {isLiked ? "ชื่นชอบแล้ว" : "ชื่นชอบ"}
                   </button>
-                  <button className="flex-1 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-foreground flex items-center justify-center gap-2 transition-colors text-sm">
+                  <button className="flex-1 px-3 py-2 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 rounded-lg text-orange-500 flex items-center justify-center gap-2 transition-colors text-sm">
                     <Bookmark className="w-4 h-4" />
                     บุ๊กมาร์ก
                   </button>
@@ -357,33 +422,11 @@ export default function ComicPage() {
 
           {/* Right Side - Details & Episodes */}
           <div className="lg:col-span-7 xl:col-span-8 space-y-6">
-            {/* Tab Buttons */}
+            {/* แนะนำเรื่อง Header */}
             <div className="bg-card rounded-2xl p-5 border border-border">
-              <div className="flex items-center justify-center gap-8 mb-4 border-b border-border pb-4">
-                <button className="flex items-center gap-2 text-sm font-medium text-foreground border-b-2 border-foreground pb-4 -mb-4">
-                  <List className="w-4 h-4" />
-                  Episodes
-                </button>
-                <button className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors pb-4 -mb-4">
-                  <Info className="w-4 h-4" />
-                  Info
-                </button>
-                <button className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors pb-4 -mb-4">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                    />
-                  </svg>
-                  Tickets
-                </button>
-              </div>
+              <h2 className="text-lg font-medium text-foreground mb-4 pb-4 border-b border-border">แนะนำเรื่อง</h2>
+              <div className="h-px bg-white/10 my-4 border-b border-border"></div>
+              <div className="h-px bg-white/10 my-4"></div>
 
               {/* Tags (clickable) */}
               {manga.tags && manga.tags.length > 0 && (
@@ -392,7 +435,7 @@ export default function ComicPage() {
                     <Link
                       key={tag.id}
                       href={`/search?q=${encodeURIComponent(tag.name)}`}
-                      className="px-2.5 py-1 bg-muted text-muted-foreground text-xs rounded-full hover:bg-orange-500/10 hover:text-orange-500 transition-colors">
+                      className="px-2.5 py-1 bg-orange-500/10 text-orange-500 text-xs rounded-full hover:bg-orange-500/20 transition-colors">
                       #{tag.name}
                     </Link>
                   ))}
@@ -403,8 +446,13 @@ export default function ComicPage() {
               <div className="text-sm text-muted-foreground leading-relaxed">
                 {manga.description ? (
                   <div
-                    className="prose prose-invert max-w-none"
-                    dangerouslySetInnerHTML={{ __html: manga.description }}
+                    className="prose prose-invert max-w-none writer-description"
+                    dangerouslySetInnerHTML={{
+                      __html: manga.description.replace(
+                        /<a\s/g,
+                        '<a target="_blank" rel="noopener noreferrer" '
+                      ),
+                    }}
                   />
                 ) : (
                   <p>ไม่มีคำอธิบาย</p>
@@ -414,13 +462,6 @@ export default function ComicPage() {
 
             {/* Reviews */}
             <ReviewsSection mangaId={manga.id} creatorId={manga.creator.id} />
-
-            {/* Bulk Discount & Unlock */}
-            <div className="flex items-center justify-between">
-              <button className="px-5 py-2.5 bg-foreground text-background text-sm font-medium rounded-full hover:bg-foreground/90 transition-colors">
-                Unlock All
-              </button>
-            </div>
 
             {/* Episode List (limit ตอนบนตาม EPISODE_VISIBLE_LIMIT) */}
             <div className="pr-2">
@@ -433,6 +474,7 @@ export default function ComicPage() {
                 getEpisodeHref={getEpisodeHref}
                 mangaTitle={manga.title}
                 mangaCreatorId={manga.creator.id}
+                mangaId={manga.id}
                 purchasedChapterIds={purchasedChapterIds}
               />
             </div>

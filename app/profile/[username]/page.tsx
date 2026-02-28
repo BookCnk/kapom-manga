@@ -11,6 +11,7 @@ import Link from "next/link";
 import { UserRole } from "@/lib/types/client-enums";
 import { cn } from "@/lib/utils";
 import { getGenreBySlug } from "@/lib/config/genres";
+import SearchResultCard from "@/components/search/SearchResultCard";
 
 type ProfileUser = {
   id: number;
@@ -326,92 +327,41 @@ export default function PublicProfilePage() {
         {/* Manga List Section */}
         {activeTab === "manga" && mangas.length > 0 && (
           <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {mangas.map((manga) => {
-                const genreSlugs: string[] = Array.isArray(manga.genreSlugs)
-                  ? (manga.genreSlugs as string[])
-                  : [];
-                const genres = genreSlugs
-                  .map((slug) => getGenreBySlug(slug))
-                  .filter((g) => g !== undefined);
+            {mangas.map((manga) => {
+              // Transform manga data to SearchResultCard format
+              const genreSlugs: string[] = Array.isArray(manga.genreSlugs)
+                ? (manga.genreSlugs as string[])
+                : [];
+              const genres = genreSlugs
+                .map((slug) => getGenreBySlug(slug))
+                .filter((g) => g !== undefined)
+                .map(g => g?.name || "");
 
-                const formatViews = (v: number) => {
-                  if (v >= 1_000_000)
-                    return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-                  if (v >= 1_000)
-                    return `${(v / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-                  return String(v);
-                };
+              const transformedManga = {
+                id: `m-${manga.id}`,
+                slug: manga.slug,
+                title: manga.title,
+                description: manga.synopsis || "", // Use only synopsis, empty if not available
+                coverImage: manga.coverUrl || "",
+                views: manga.views || 0,
+                rating: 0,
+                totalChapters: manga._count?.chapters || 0,
+                latestChapter: manga._count?.chapters || 0,
+                latestUpdatedLabel: "",
+                updatedAt: manga.updatedAt || new Date().toISOString(),
+                isNew: false,
+                isCompleted: manga.status === "COMPLETED",
+                tags: [],
+                genre: genres[0] as any,
+                genres: genres.slice(0, 2),
+                author: profileUser.name || "",
+                translator: "", // Remove translator
+                creatorUsername: profileUser.username || "",
+                comments: manga._count?.comments || 0, // Add comments count
+              };
 
-                return (
-                  <Link
-                    key={manga.id}
-                    href={`/comic/${manga.slug}`}
-                    className="group block bg-card border border-border rounded-xl overflow-hidden hover:border-orange-500/30 hover:shadow-md transition-all">
-                    <div className="flex gap-4 p-4">
-                      {/* Cover */}
-                      <div className="relative w-20 h-28 sm:w-24 sm:h-32 shrink-0 rounded-lg overflow-hidden bg-muted">
-                        {manga.coverUrl ? (
-                          <img
-                            src={manga.coverUrl}
-                            alt={manga.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-muted/80 text-muted-foreground text-xs">
-                            No Image
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0 space-y-2">
-                        <div>
-                          <h3 className="text-base sm:text-lg font-semibold text-foreground line-clamp-2 group-hover:text-orange-400 transition-colors">
-                            {manga.title}
-                            {manga.originalTitle && (
-                              <span className="text-sm text-muted-foreground ml-1">
-                                {manga.originalTitle}
-                              </span>
-                            )}
-                          </h3>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className="text-orange-400 font-medium">
-                            {displayName}
-                          </span>
-                          {genres.length > 0 && (
-                            <>
-                              <span>•</span>
-                              <span className="truncate">
-                                {genres.slice(0, 2).map((g) => g?.name).join(" x ")}
-                              </span>
-                            </>
-                          )}
-                        </div>
-
-                        {manga.description && (
-                          <p className="text-sm text-muted-foreground line-clamp-2">
-                            {manga.description}
-                          </p>
-                        )}
-
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground pt-1">
-                          <span>{manga._count?.chapters || 0}</span>
-                          <span className="flex items-center gap-1">
-                            <Eye className="w-3 h-3" />
-                            {formatViews(manga.views || 0)}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <MessageCircle className="w-3 h-3" />
-                            {manga._count?.comments || 0}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
+              return <SearchResultCard key={manga.id} item={transformedManga} />;
+            })}
           </div>
         )}
 

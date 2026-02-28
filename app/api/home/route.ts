@@ -120,28 +120,44 @@ async function getWeeklyViewsCount(mangaId: number): Promise<number> {
 // Transform manga to MangaCard format
 function transformManga(manga: any, sales: number = 0) {
   // Map genreSlugs JSON field to main/sub genre names via config
-  const slugs: string[] = Array.isArray(manga.genreSlugs)
-    ? manga.genreSlugs
-    : [];
+  // Handle both array format and comma-separated string format
+  let slugs: string[] = [];
+  if (Array.isArray(manga.genreSlugs)) {
+    slugs = manga.genreSlugs;
+  } else if (typeof manga.genreSlugs === "string") {
+    // Parse comma-separated string: "action,adventure" -> ["action", "adventure"]
+    slugs = manga.genreSlugs.split(",").map((s: string) => s.trim()).filter(Boolean);
+  }
 
   let mainGenreName: string | undefined;
   let subGenreName: string | undefined;
 
-  for (const slug of slugs) {
+  // First slug = main genre, second slug = sub genre (regardless of config type)
+  for (let i = 0; i < slugs.length; i++) {
+    const slug = slugs[i];
     const genre = getGenreBySlug(slug);
     if (!genre) continue;
-    if (genre.type === "main" && !mainGenreName) {
+    
+    if (i === 0) {
+      // First slug is always main genre
       mainGenreName = genre.name;
-    } else if (genre.type === "sub" && !subGenreName) {
+    } else if (i === 1 && genre.name !== mainGenreName) {
+      // Second slug is sub genre (if different from main)
       subGenreName = genre.name;
     }
   }
 
   const genreName = subGenreName || mainGenreName || "ทั่วไป";
 
+  // Build genres array with both main and sub (up to 2)
+  const genres: string[] = [];
+  if (mainGenreName) genres.push(mainGenreName);
+  if (subGenreName) genres.push(subGenreName);
+
   const latestChapter = manga.chapters?.[0] || null;
   const totalChapters = manga._count?.chapters || 0;
   const latestChapterNumber = latestChapter?.number || 0;
+  const latestChapterSlug = latestChapter?.slug || "";
 
   // Format updatedAt
   let latestUpdatedLabel = "";
@@ -175,17 +191,27 @@ function transformManga(manga: any, sales: number = 0) {
     slug: manga.slug,
     title: manga.title,
     description: manga.description || "",
+    synopsis: manga.synopsis || "",
     coverImage: manga.coverUrl || "",
     views: manga.views || 0,
-    rating: 0, // Rating not implemented yet
+    bookmarks: manga._count?.bookmarks || 0,
+    rating: 0,
     totalChapters,
     latestChapter: latestChapterNumber,
+    latestChapterSlug,
     latestUpdatedLabel,
     updatedAt: updatedAtString,
-    isNew: false, // Can be calculated based on createdAt
+    isNew: false,
+    isCompleted: manga.status === "COMPLETED",
     tags: [],
     genre: genreName,
+    genres,
     translator: manga.creator?.name || "RTN Team",
+    creatorUsername: manga.creator?.username || undefined,
+    creatorId: manga.creator?.id || undefined,
+    // Debug: log creator data
+    _debugCreator: manga.creator,
+    likes: manga._count?.likes || 0,
     sales,
   };
 }
@@ -208,8 +234,6 @@ export async function GET(_request: NextRequest) {
       }
     };
 
-    console.log("Starting to fetch home data...");
-
     // Featured: Latest mangas (limit 5)
     const featuredMangas = await prisma.manga
       .findMany({
@@ -223,16 +247,18 @@ export async function GET(_request: NextRequest) {
           description: true,
           coverUrl: true,
           views: true,
+          status: true,
           updatedAt: true,
           createdAt: true,
           genreSlugs: true,
-          creator: { select: { id: true, name: true, email: true } },
+          creator: { select: { id: true, name: true, email: true, username: true } },
           chapters: {
             take: 1,
             orderBy: { updatedAt: "desc" },
             select: {
               id: true,
               number: true,
+              slug: true,
               updatedAt: true,
             },
           },
@@ -264,16 +290,18 @@ export async function GET(_request: NextRequest) {
           description: true,
           coverUrl: true,
           views: true,
+          status: true,
           updatedAt: true,
           createdAt: true,
           genreSlugs: true,
-          creator: { select: { id: true, name: true, email: true } },
+          creator: { select: { id: true, name: true, email: true, username: true } },
           chapters: {
             take: 1,
             orderBy: { updatedAt: "desc" },
             select: {
               id: true,
               number: true,
+              slug: true,
               updatedAt: true,
             },
           },
@@ -304,16 +332,18 @@ export async function GET(_request: NextRequest) {
           description: true,
           coverUrl: true,
           views: true,
+          status: true,
           updatedAt: true,
           createdAt: true,
           genreSlugs: true,
-          creator: { select: { id: true, name: true, email: true } },
+          creator: { select: { id: true, name: true, email: true, username: true } },
           chapters: {
             take: 1,
             orderBy: { updatedAt: "desc" },
             select: {
               id: true,
               number: true,
+              slug: true,
               updatedAt: true,
             },
           },
@@ -357,16 +387,18 @@ export async function GET(_request: NextRequest) {
           description: true,
           coverUrl: true,
           views: true,
+          status: true,
           updatedAt: true,
           createdAt: true,
           genreSlugs: true,
-          creator: { select: { id: true, name: true, email: true } },
+          creator: { select: { id: true, name: true, email: true, username: true } },
           chapters: {
             take: 1,
             orderBy: { updatedAt: "desc" },
             select: {
               id: true,
               number: true,
+              slug: true,
               updatedAt: true,
             },
           },
@@ -395,7 +427,7 @@ export async function GET(_request: NextRequest) {
 
     const bestSellersMangas = mangasWithWeeklySales
       .sort((a, b) => b.weeklySales - a.weeklySales)
-      .slice(0, 5)
+      .slice(0, 20)
       .map((item) => item.manga);
 
     // Most Liked: Top mangas by weekly likes (limit 5)
@@ -410,16 +442,18 @@ export async function GET(_request: NextRequest) {
           description: true,
           coverUrl: true,
           views: true,
+          status: true,
           updatedAt: true,
           createdAt: true,
           genreSlugs: true,
-          creator: { select: { id: true, name: true, email: true } },
+          creator: { select: { id: true, name: true, email: true, username: true } },
           chapters: {
             take: 1,
             orderBy: { updatedAt: "desc" },
             select: {
               id: true,
               number: true,
+              slug: true,
               updatedAt: true,
             },
           },
@@ -448,7 +482,7 @@ export async function GET(_request: NextRequest) {
 
     const mostLikedMangas = mangasWithWeeklyLikes
       .sort((a, b) => b.weeklyLikes - a.weeklyLikes)
-      .slice(0, 5)
+      .slice(0, 20)
       .map((item) => item.manga);
 
     // Get all public mangas as fallback
@@ -462,16 +496,18 @@ export async function GET(_request: NextRequest) {
           description: true,
           coverUrl: true,
           views: true,
+          status: true,
           updatedAt: true,
           createdAt: true,
           genreSlugs: true,
-          creator: { select: { id: true, name: true, email: true } },
+          creator: { select: { id: true, name: true, email: true, username: true } },
           chapters: {
             take: 1,
             orderBy: { updatedAt: "desc" },
             select: {
               id: true,
               number: true,
+              slug: true,
               updatedAt: true,
             },
           },
@@ -546,8 +582,8 @@ export async function GET(_request: NextRequest) {
     );
 
     // Fill bestSellers if less than 5
-    if (bestSellers.length < 5) {
-      const needed = 5 - bestSellers.length;
+    if (bestSellers.length < 20) {
+      const needed = 20 - bestSellers.length;
       const sellerIds = new Set(bestSellers.map((m) => m.id));
       const additional = allPublicMangas
         .filter((m) => !sellerIds.has(`m-${m.id}`))
@@ -563,8 +599,8 @@ export async function GET(_request: NextRequest) {
     );
 
     // Fill mostLiked if less than 5
-    if (mostLiked.length < 5) {
-      const needed = 5 - mostLiked.length;
+    if (mostLiked.length < 20) {
+      const needed = 20 - mostLiked.length;
       const likedIds = new Set(mostLiked.map((m) => m.id));
       const additional = allPublicMangas
         .filter((m) => !likedIds.has(`m-${m.id}`))
@@ -575,14 +611,12 @@ export async function GET(_request: NextRequest) {
       mostLiked.push(...additionalTransformed);
     }
 
-    console.log("Successfully fetched home data");
-
     return ok({
       featured: featured.slice(0, 5),
       latestUpdates: latestUpdates.slice(0, 12),
       weeklyRanking: weeklyRanking.slice(0, 10),
-      bestSellers: bestSellers.slice(0, 5),
-      mostLiked: mostLiked.slice(0, 5),
+      bestSellers: bestSellers.slice(0, 20),
+      mostLiked: mostLiked.slice(0, 20),
     });
   } catch (error) {
     console.error("Error in /api/home:", error);

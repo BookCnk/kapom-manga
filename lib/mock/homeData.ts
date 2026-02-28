@@ -15,27 +15,34 @@ export type MangaCard = {
   slug: string; // ใช้ทำ path เช่น /manga/[slug]
   title: string;
   description: string;
+  synopsis?: string; // เรื่องย่อ (fallback ใช้ description)
   coverImage: string;
 
   // meta ที่การ์ดคุณโชว์
   views: number; // 13.6K -> 13600
   rating: number; // 4.7
+  bookmarks?: number; // จำนวนคนที่เพิ่มเข้าชั้น
   totalChapters: number;
   sales?: number; // ยอดขาย
+  comments?: number; // จำนวนคอมเม้น
+  likes?: number; // จำนวนคนชื่นชอบ
 
   // latest update
   latestChapter?: number;
+  latestChapterSlug?: string;
   latestUpdatedLabel?: string; // label แบบกำหนดเอง เช่น "15 นาทีที่แล้ว" (fallback)
   updatedAt?: string; // เวลาอัปเดตล่าสุด (ISO string จาก database)
 
   // badges
   isNew?: boolean; // โชว์ UP
+  isCompleted?: boolean; // โชว์ "จบ"
   tags?: string[]; // เช่น ["Exclusive"]
   genre: MangaGenre; // genre หลัก (สำหรับ backward compatibility)
   genres?: string[]; // array ของ genre names (สูงสุด 2)
   author?: string; // ชื่อผู้เขียน
   translator?: string; // ชื่อคนแปล
-  creatorUsername?: string; // username ของผู้สร้าง (ใช้สำหรับลิงก์ไปที่ profile)
+  creatorUsername?: string;
+  creatorId?: number; // username ของผู้สร้าง (ใช้สำหรับลิงก์ไปที่ profile)
 };
 
 export type HomePageData = {

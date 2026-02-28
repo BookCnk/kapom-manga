@@ -74,6 +74,7 @@ const updateMangaSchema = z.object({
   // จำกัดชื่อเรื่องต้นฉบับสูงสุด 120 ตัวอักษร
   originalTitle: z.string().trim().max(120).nullable().optional(),
   description: z.string().trim().max(5000).nullable().optional(),
+  synopsis: z.string().trim().max(300).nullable().optional(),
   coverUrl: z.string().url().nullable().optional(),
   bannerUrl: z.string().url().nullable().optional(),
   status: z.nativeEnum(MangaStatus).optional(),
@@ -175,8 +176,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       // Update manga basic info
       const updatedManga = await tx.manga.update({
         where: { id: mangaId },
-        data: mangaData,
-      });
+        data: mangaData as any,
+      } as any);
 
       return updatedManga;
     });
