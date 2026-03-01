@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Folder Upload</title>
+</head>
+<body>
+    <h1>Test Folder Upload</h1>
+    <input type="file" webkitdirectory directory multiple id="folder-input">
+    <button onclick="testUpload()">Test Upload</button>
+    
+    <script>
+        function testUpload() {
+            const input = document.getElementById('folder-input');
+            const files = Array.from(input.files || []);
+            console.log('Files detected:', files.length);
+            console.log('Files with paths:', files.map(f => ({
+                name: f.name,
+                webkitRelativePath: f.webkitRelativePath,
+                size: f.size
+            })));
+        }
+    </script>
+</body>
+</html>
