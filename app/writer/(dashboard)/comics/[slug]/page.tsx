@@ -309,6 +309,7 @@ export default function EditMangaPage() {
   });
   const [chapterImages, setChapterImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [editPageGroups, setEditPageGroups] = useState<string[][]>([]);
   const [priceInputValue, setPriceInputValue] = useState<string>("0");
   const [isPaidMode, setIsPaidMode] = useState(false);
   const priceInputRef = useRef<HTMLInputElement>(null);
@@ -1216,6 +1217,27 @@ export default function EditMangaPage() {
     return "..." + fileName.substring(fileName.length - maxLength + 3);
   };
 
+  const groupSplitPageUrls = (pages: Array<{ pageNo: number; imageUrl: string }>): string[][] => {
+    const groups: string[][] = [];
+    let i = 0;
+    while (i < pages.length) {
+      const url1 = pages[i].imageUrl;
+      if (i + 1 < pages.length) {
+        const url2 = pages[i + 1].imageUrl;
+        const m1 = url1.match(/^(.*)-1\.webp/);
+        const m2 = url2.match(/^(.*)-2\.webp/);
+        if (m1 && m2 && m1[1] === m2[1]) {
+          groups.push([url1, url2]);
+          i += 2;
+          continue;
+        }
+      }
+      groups.push([url1]);
+      i++;
+    }
+    return groups;
+  };
+
   // Handle drag and drop reordering
   const handleDragStart = (index: number) => {
     setDraggedIndex(index);
@@ -1874,6 +1896,7 @@ export default function EditMangaPage() {
       setEditingChapterId(null);
       setImagePreviews([]);
       setChapterImages([]);
+      setEditPageGroups([]);
       setUploadedPages(new Set());
       // Wait a bit for modal to close
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -1927,13 +1950,13 @@ export default function EditMangaPage() {
           setScheduleCalYear(now.getFullYear());
         }
 
-        // Load existing pages as previews
-        const previews = chapter.pages
-          .sort((a: any, b: any) => a.pageNo - b.pageNo)
-          .map((page: any) => page.imageUrl as string);
-        
+        // จัดกลุ่ม split pages
+        const sortedPages = chapter.pages.sort((a: any, b: any) => a.pageNo - b.pageNo);
+        const groups = groupSplitPageUrls(sortedPages);
+        setEditPageGroups(groups);
+        const previews = groups.map((g: string[]) => g[0]);
         setImagePreviews(previews);
-        // แสดงสถานะว่ารูปเดิมทั้งหมดถูกอัปโหลดไว้แล้ว (ติ๊กถูกเริ่มต้น)
+        // แสดงสถานะว่ารูปเดิมทั้งหมดถูกอัพโหลดไว้แล้ว (ติ๊กถูกเริ่มต้น)
         setUploadedPages(
           new Set(previews.map((_preview: string, idx: number) => idx)),
         );
@@ -2060,64 +2083,60 @@ export default function EditMangaPage() {
       setUploadingProgress({ current: 0, total: imagePreviews.length });
       setUploadedPages(new Set());
       const newImageUrls: string[] = [];
+      let pageNo = 1;
 
       for (let index = 0; index < imagePreviews.length; index++) {
         const preview = imagePreviews[index];
-        let imageUrl = preview;
+        const group = editPageGroups[index];
 
-        // ถ้าเป็น URL ของ S3 อยู่แล้ว ใช้ได้เลย
-        // ถ้าเป็น data URL (รูปใหม่) หรือ local file → อัพโหลดไป S3
-        if (preview.startsWith("data:") || (chapterImages[index] instanceof File)) {
-          // ถ้ามี File object ให้ใช้ File, ไม่งั้นแปลง data URL เป็น blob
+        if (chapterImages[index] instanceof File || (preview.startsWith("data:") && (!group || group.length === 0))) {
           let fileToUpload: Blob;
           if (chapterImages[index] instanceof File) {
             fileToUpload = chapterImages[index];
           } else {
-            // แปลง data URL เป็น Blob
-            const response = await fetch(preview);
-            fileToUpload = await response.blob();
+            const blobRes = await fetch(preview);
+            fileToUpload = await blobRes.blob();
           }
-
           const uploadForm = new FormData();
           uploadForm.append("file", fileToUpload, chapterImages[index]?.name || `page-${index + 1}.jpg`);
           uploadForm.append("folder", `manga/${manga.slug}/episodes/${chapterNumber}`);
-
           const uploadRes = await fetch("/api/uploads/image", {
             method: "POST",
             headers: { "x-session-token": sessionToken },
             body: uploadForm,
           });
-
           const uploadData = await uploadRes.json();
-          if (!uploadRes.ok || !uploadData.success || !uploadData.data?.url) {
+          if (!uploadRes.ok || !uploadData.success || !uploadData.data?.urls) {
             throw new Error(uploadData.error || `Failed to upload page ${index + 1}`);
           }
-
-          imageUrl = uploadData.data.url;
+          for (const url of uploadData.data.urls as string[]) {
+            const pageRes = await fetch(`/api/chapters/${editingChapterId}/pages`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-session-token": sessionToken },
+              body: JSON.stringify({ pageNo: pageNo++, imageUrl: url }),
+            });
+            if (!pageRes.ok) { const e = await pageRes.json(); throw new Error(e.error || "Failed to create page record"); }
+            newImageUrls.push(url);
+          }
+        } else if (group && group.length > 0) {
+          for (const url of group) {
+            const pageRes = await fetch(`/api/chapters/${editingChapterId}/pages`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-session-token": sessionToken },
+              body: JSON.stringify({ pageNo: pageNo++, imageUrl: url }),
+            });
+            if (!pageRes.ok) { const e = await pageRes.json(); throw new Error(e.error || "Failed to create page record"); }
+            newImageUrls.push(url);
+          }
+        } else {
+          const pageRes = await fetch(`/api/chapters/${editingChapterId}/pages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-session-token": sessionToken },
+            body: JSON.stringify({ pageNo: pageNo++, imageUrl: preview }),
+          });
+          if (!pageRes.ok) { const e = await pageRes.json(); throw new Error(e.error || "Failed to create page record"); }
+          newImageUrls.push(preview);
         }
-        // ถ้าเป็น S3 URL อยู่แล้ว (เช่น existing image) → ใช้ URL เดิมได้
-
-        // สร้าง page record
-        const pageResponse = await fetch(`/api/chapters/${editingChapterId}/pages`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-session-token": sessionToken,
-          },
-          body: JSON.stringify({
-            pageNo: index + 1,
-            imageUrl,
-          }),
-        });
-
-        if (!pageResponse.ok) {
-          const errorData = await pageResponse.json();
-          throw new Error(errorData.error || `Failed to create page ${index + 1}`);
-        }
-
-        newImageUrls.push(imageUrl);
-
-        // อัพเดท progress และติ๊กถูก
         setUploadingProgress({ current: index + 1, total: imagePreviews.length });
         setUploadedPages((prev) => new Set(prev).add(index));
       }
@@ -2152,6 +2171,7 @@ export default function EditMangaPage() {
       setEditingChapterId(null);
       setImagePreviews([]);
       setChapterImages([]);
+      setEditPageGroups([]);
       setUploadedPages(new Set());
       await fetchManga(); // Refresh manga data
     } catch (error) {
@@ -4536,15 +4556,19 @@ export default function EditMangaPage() {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-foreground">
-                        รูปภาพ ({chapterImages.length} รูป)
+                        รูปภาพ ({editingChapterId ? imagePreviews.length : chapterImages.length} รูป)
+                        {editingChapterId && editPageGroups.some(g => g.length > 1) && (
+                          <span className="ml-2 text-xs text-muted-foreground font-normal">(รวม split แล้ว)</span>
+                        )}
                       </label>
-                      {chapterImages.length > 0 && (
+                      {(editingChapterId ? imagePreviews.length > 0 : chapterImages.length > 0) && (
                         <button
                           type="button"
                           onClick={() => {
                             if (uploadingChapter || uploadingProgress) return;
                             setChapterImages([]);
                             setImagePreviews([]);
+                            setEditPageGroups([]);
                           }}
                           disabled={uploadingChapter || !!uploadingProgress}
                           className={cn(
@@ -4619,32 +4643,44 @@ export default function EditMangaPage() {
                             const isCurrentlyUploading = uploadingChapter && uploadingProgress && index === uploadingProgress.current;
                             const isUploaded = uploadedPages.has(index);
                             const isUploading = uploadingChapter || !!uploadingProgress;
+                            const isEditMode = !!editingChapterId;
+                            const group = editPageGroups[index];
+                            const isSplitPair = isEditMode && group && group.length === 2;
+                            const canDrag = !isUploading && !isEditMode;
                             
                             return (
                               <div
                                 key={index}
-                                draggable={!isUploading}
-                                onDragStart={() => !isUploading && handleDragStart(index)}
-                                onDragOver={(e) => !isUploading && handleDragOver(e, index)}
-                                onDrop={(e) => !isUploading && handleDrop(e, index)}
+                                draggable={canDrag}
+                                onDragStart={() => canDrag && handleDragStart(index)}
+                                onDragOver={(e) => canDrag && handleDragOver(e, index)}
+                                onDrop={(e) => canDrag && handleDrop(e, index)}
                                 className={cn(
                                   "relative group",
-                                  isUploading ? "cursor-not-allowed" : "cursor-move",
+                                  isUploading || isEditMode ? "cursor-default" : "cursor-move",
                                   isDragging && "opacity-50 scale-95"
                                 )}>
-                                {/* Image container - fixed height, full image visible */}
+                                {/* Image container */}
                                 <div className={cn(
                                   "w-full aspect-[3/4] rounded-lg overflow-hidden bg-muted border transition-all relative",
                                   isDragging ? "border-orange-500 border-2" : "border-border",
                                   isUploaded && "ring-2 ring-green-500 border-green-500",
                                   isCurrentlyUploading && "ring-2 ring-orange-500"
                                 )}>
-                                  <img
-                                    src={preview}
-                                    alt={`Page ${index + 1}`}
-                                    className="w-full h-full object-contain pointer-events-none"
-                                    draggable={false}
-                                  />
+                                  {isSplitPair ? (
+                                    <>
+                                      <img src={group[0]} alt={`Page ${index + 1} top`} className="absolute top-0 left-0 w-full h-1/2 object-cover object-top pointer-events-none" draggable={false} />
+                                      <img src={group[1]} alt={`Page ${index + 1} bottom`} className="absolute bottom-0 left-0 w-full h-1/2 object-cover object-bottom pointer-events-none" draggable={false} />
+                                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] text-center py-0.5 pointer-events-none">2 parts</div>
+                                    </>
+                                  ) : (
+                                    <img
+                                      src={preview}
+                                      alt={`Page ${index + 1}`}
+                                      className="w-full h-full object-contain pointer-events-none"
+                                      draggable={false}
+                                    />
+                                  )}
                                   {/* กำลังอัพโหลดหน้านี้ */}
                                   {isCurrentlyUploading && (
                                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
@@ -4665,14 +4701,14 @@ export default function EditMangaPage() {
                                 )}>
                                   {isUploaded ? "✓ " : ""}{index + 1}
                                 </div>
-                                {/* File name badge - right side */}
-                                <div 
-                                  className="absolute top-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none"
-                                  title={fileName}>
-                                  {truncatedFileName}
-                                </div>
-                                {/* Delete button - hidden when uploading */}
-                                {!isUploading && (
+                                {!isEditMode && (
+                                  <div 
+                                    className="absolute top-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none"
+                                    title={fileName}>
+                                    {truncatedFileName}
+                                  </div>
+                                )}
+                                {!isUploading && !isEditMode && (
                                   <button
                                     type="button"
                                     onClick={(e) => {

@@ -46,7 +46,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: Params) {
+export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const actor = await requireAuth(request);
     ensureTranslatorOrAdmin(actor);
@@ -55,8 +55,18 @@ export async function POST(request: NextRequest, { params }: Params) {
     await ensureCanManageChapter(actor, chapterId);
     const body = createPageSchema.parse(await request.json());
 
-    const page = await prisma.page.create({
-      data: {
+    // ใช้ upsert เพื่อ handle duplicate pageNo กรณีที่ delete ไม่สำเร็จ
+    const page = await prisma.page.upsert({
+      where: {
+        chapterId_pageNo: {
+          chapterId,
+          pageNo: body.pageNo,
+        },
+      },
+      update: {
+        imageUrl: body.imageUrl,
+      },
+      create: {
         chapterId,
         pageNo: body.pageNo,
         imageUrl: body.imageUrl,

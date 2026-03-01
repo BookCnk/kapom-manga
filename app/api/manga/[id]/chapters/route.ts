@@ -66,6 +66,18 @@ export async function POST(request: NextRequest, { params }: Params) {
       throw new HttpError(400, "Chapter slug already exists");
     }
 
+    // Check if chapter number already exists for this manga
+    const existingChapterNumber = await prisma.chapter.findFirst({
+      where: {
+        mangaId,
+        number: body.number,
+      },
+    });
+
+    if (existingChapterNumber) {
+      throw new HttpError(400, `Chapter number ${body.number} already exists for this manga`);
+    }
+
     const chapter = await prisma.chapter.create({
       data: {
         mangaId,

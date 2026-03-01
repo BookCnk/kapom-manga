@@ -8,7 +8,7 @@ import {
   ensureCanManageChapter,
   ensureTranslatorOrAdmin,
 } from "@/lib/api/permissions";
-import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 
 function getS3Client() {
   const endpoint = process.env.S3_ENDPOINT;
@@ -122,38 +122,60 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const chapterId = parseChapterId(params.id);
     await ensureCanManageChapter(actor, chapterId);
 
-    // ดึงรูปทั้งหมดของตอนนี้ก่อนลบ
-    const pages = await prisma.page.findMany({
-      where: { chapterId },
-      select: { imageUrl: true },
+    // ดึงข้อมูลตอน + รูปทั้งหมดก่อนลบ
+    const chapter = await prisma.chapter.findUnique({
+      where: { id: chapterId },
+      select: {
+        number: true,
+        manga: { select: { slug: true } },
+        pages: { select: { imageUrl: true } },
+      },
     });
+    if (!chapter) throw new HttpError(404, "Chapter not found");
 
     // ลบตอนจากฐานข้อมูล (cascade จะลบ pages ด้วย)
     await prisma.chapter.delete({ where: { id: chapterId } });
 
-    // ลบรูปจาก S3 (ทำหลังลบ DB สำเร็จแล้ว)
+    // ลบโฟลเดอร์ตอนและรูปจาก S3 แบบ fire-and-forget
     const bucket = process.env.S3_BUCKET_NAME;
     const s3 = getS3Client();
 
-    if (s3 && bucket && pages.length > 0) {
-      const imageUrls = pages
-        .map((p) => p.imageUrl)
-        .filter((url): url is string => !!url);
-
-      // ลบรูปแบบ fire-and-forget ไม่ให้กระทบ response
-      Promise.allSettled(
-        imageUrls.map(async (url) => {
-          const key = extractKeyFromUrl(url, bucket);
-          if (!key) return;
-          try {
+    if (s3 && bucket) {
+      const folderPrefix = `manga/${chapter.manga.slug}/episodes/${chapter.number}/`;
+      Promise.resolve().then(async () => {
+        try {
+          const listRes = await s3.send(
+            new ListObjectsV2Command({ Bucket: bucket, Prefix: folderPrefix }),
+          );
+          const objects = listRes.Contents ?? [];
+          if (objects.length > 0) {
             await s3.send(
-              new DeleteObjectCommand({ Bucket: bucket, Key: key }),
+              new DeleteObjectsCommand({
+                Bucket: bucket,
+                Delete: {
+                  Objects: objects.map((o) => ({ Key: o.Key! })),
+                  Quiet: true,
+                },
+              }),
             );
-          } catch (err) {
-            console.error("Failed to delete S3 image:", url, err);
           }
-        }),
-      ).catch(() => {});
+        } catch (err) {
+          console.error("Failed to delete S3 folder:", folderPrefix, err);
+        }
+        // fallback: ลบทีละไฟล์ (กรณี orphaned files นอก prefix)
+        const imageUrls = chapter.pages
+          .map((p) => p.imageUrl)
+          .filter((url): url is string => !!url);
+        await Promise.allSettled(
+          imageUrls.map(async (url) => {
+            const key = extractKeyFromUrl(url, bucket);
+            if (!key) return;
+            try {
+              await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+            } catch {}
+          }),
+        );
+      }).catch(() => {});
     }
 
     return ok({ success: true });
